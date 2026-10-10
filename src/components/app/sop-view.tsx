@@ -34,7 +34,7 @@ function DocRow({ d }: { d: Doc }) {
       <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 py-2.5 text-left">
         <Pill status={d.kind === "lessons" ? "warn" : "draft"} label={d.kind === "lessons" ? "lessons" : "sop"} />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{d.title}</span>
-        <span className="font-mono text-xs text-muted-foreground">{new Date(d.created_at).toLocaleDateString("en-GB")}</span>
+        <span className="font-mono text-xs text-muted-foreground">{new Date(d.created_at).toLocaleDateString("en-GB", { timeZone: "Asia/Kuala_Lumpur" })}</span>
         <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
       <AnimatePresence initial={false}>
@@ -145,7 +145,7 @@ export function SopView({ university, docs, canEdit }: { university: University;
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-5">
           {[
             ["Contingency", `${sop.budget_rules.contingency_pct}%`, `Keep ${sop.budget_rules.contingency_pct}% of the budget unspent for surprises. It sits inside the cap, not on top.`],
-            ["President signs above", `RM${sop.budget_rules.president_threshold.toLocaleString()}`, `Any single spend over RM${sop.budget_rules.president_threshold.toLocaleString()} needs the President or VP to approve it first. Directors can approve smaller amounts.`],
+            ["President signs above", `RM${sop.budget_rules.president_threshold.toLocaleString("en-MY")}`, `Any single spend over RM${sop.budget_rules.president_threshold.toLocaleString("en-MY")} needs the President or VP to approve it first. Directors can approve smaller amounts.`],
             ["Spend alert", `${sop.budget_rules.alert_pct}%`, `When money spent reaches ${sop.budget_rules.alert_pct}% of the approved budget, Movents warns the President and the event team.`],
             ["Claim deadline", `${sop.budget_rules.claims_days_after} days`, `Hand original receipts to the society treasurer within ${sop.budget_rules.claims_days_after} days after the event. The treasurer files the claim with Student LIFE (SLE).`],
             ["Food buffer", `${sop.budget_rules.food_buffer_pct}%`, `Order food for ${sop.budget_rules.food_buffer_pct}% more people than expected attendance.`],
