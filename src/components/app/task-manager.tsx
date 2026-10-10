@@ -233,23 +233,25 @@ const ROW = 32;
 const HEAD = 46;
 
 function Timeline({ tasks, critical, eventDate, onOpen }: { tasks: TaskItem[]; critical: Set<string>; eventDate: string; onOpen: (t: TaskItem) => void }) {
-  const rows = useMemo(() => [...tasks].sort((a, b) => (a.start_date ?? a.due_date).localeCompare(b.start_date ?? b.due_date) || a.due_date.localeCompare(b.due_date)), [tasks]);
+  const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
+  const shift = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+  // A task with no real duration still reads as work: from the day after its latest blocker, or 4 days before it is due.
+  const startOf = (t: TaskItem) => {
+    const s0 = t.start_date ?? t.due_date;
+    if (s0 < t.due_date) return s0;
+    const after = (t.depends_on ?? []).map((d) => byId.get(d)?.due_date).filter((d): d is string => Boolean(d)).sort().pop();
+    const s1 = after ? shift(after, 1) : shift(t.due_date, -4);
+    return s1 < t.due_date ? s1 : t.due_date;
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rows = useMemo(() => [...tasks].sort((a, b) => startOf(a).localeCompare(startOf(b)) || a.due_date.localeCompare(b.due_date)), [tasks]);
   const toDay = (d: string) => Math.round(Date.parse(`${d}T00:00:00Z`) / 86400000);
-  const min = Math.min(...rows.map((t) => toDay(t.start_date ?? t.due_date)), toDay(eventDate)) - 2;
+  const min = Math.min(...rows.map((t) => toDay(startOf(t))), toDay(eventDate)) - 2;
   const max = Math.max(...rows.map((t) => toDay(t.due_date)), toDay(eventDate)) + 7;
   const span = Math.max(1, max - min);
   const scroller = useRef<HTMLDivElement>(null);
-  const [avail, setAvail] = useState(900);
+  const [DAY, setDay] = useState(34);
   const [tip, setTip] = useState<{ t: TaskItem; x: number; y: number } | null>(null);
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setAvail(el.clientWidth));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  // Fit the whole range on screen; only very long plans scroll.
-  const DAY = Math.max(14, avail / span);
   const width = span * DAY;
   const x = (d: string) => (toDay(d) - min) * DAY;
   const todayX = (Math.round(Date.now() / 86400000 + 8 / 24) - min) * DAY;
@@ -257,14 +259,31 @@ function Timeline({ tasks, critical, eventDate, onOpen }: { tasks: TaskItem[]; c
   const months: { label: string; left: number }[] = [];
   const ticks: { label: string; left: number }[] = [];
   const everyWeek = DAY * 7 >= 56;
+  const todayLeft = todayX;
   for (let d = min; d <= max; d++) {
     const date = new Date(d * 86400000);
     if (date.getUTCDate() === 1 || d === min) months.push({ label: date.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }), left: (d - min) * DAY });
-    if (date.getUTCDay() === 1 && (everyWeek || Math.floor(d / 7) % 2 === 0)) ticks.push({ label: String(date.getUTCDate()), left: (d - min) * DAY });
+    if (date.getUTCDay() === 1 && (everyWeek || Math.floor(d / 7) % 2 === 0)) ticks.push({ label: date.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }), left: (d - min) * DAY });
   }
   const height = rows.length * ROW;
+  useEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollLeft = Math.max(0, todayLeft - 80);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <div className="relative overflow-hidden rounded-2xl border-[1.5px] border-ink bg-card">
+      <div className="absolute right-2 top-1.5 z-20 flex items-center gap-0.5 rounded-lg border-[1.5px] border-ink bg-card p-0.5 shadow-[2px_2px_0_0_#161514]">
+        {[
+          ["Weeks", 14],
+          ["Days", 34],
+          ["Zoom", 60],
+        ].map(([label, d]) => (
+          <button key={label} onClick={() => setDay(d as number)} className={cn("rounded-md px-2 py-0.5 font-mono text-[10px] font-bold uppercase transition-colors", DAY === d ? "bg-ink text-white" : "text-ink/60 hover:bg-sand hover:text-ink")}>
+            {label}
+          </button>
+        ))}
+      </div>
       <div ref={scroller} className="relative overflow-x-auto scrollbar-thin" onMouseLeave={() => setTip(null)}>
         <div style={{ width }} className="relative">
           <div className="relative border-b-[1.5px] border-ink bg-card" style={{ height: HEAD }}>
@@ -301,7 +320,7 @@ function Timeline({ tasks, critical, eventDate, onOpen }: { tasks: TaskItem[]; c
                   const ti = index.get(t.id)!;
                   const x1 = x(from.due_date) + DAY;
                   const y1 = fi * ROW + ROW / 2;
-                  const x2 = x(t.start_date ?? t.due_date);
+                  const x2 = x(startOf(t));
                   const y2 = ti * ROW + ROW / 2;
                   const hot = critical.has(t.id) && critical.has(d);
                   const mid = Math.max(x1 + 6, x2 - 8);
@@ -310,7 +329,7 @@ function Timeline({ tasks, critical, eventDate, onOpen }: { tasks: TaskItem[]; c
               )}
             </svg>
             {rows.map((t, i) => {
-              const left = x(t.start_date ?? t.due_date);
+              const left = x(startOf(t));
               const w = Math.max(DAY, x(t.due_date) + DAY - left);
               const blocked = blockersOf(t, tasks).length > 0 && t.status !== "done";
               const inside = w >= 56;
@@ -358,7 +377,7 @@ function Timeline({ tasks, critical, eventDate, onOpen }: { tasks: TaskItem[]; c
             >
               <p className="font-semibold">{clean(tip.t.title)}</p>
               <p className="mt-0.5 font-mono text-[10.5px] text-muted-foreground">
-                {short(tip.t.start_date ?? tip.t.due_date)} to {short(tip.t.due_date)}
+                {short(startOf(tip.t))} to {short(tip.t.due_date)}
                 {tip.t.owner ? `  ·  ${tip.t.owner}` : ""}
               </p>
             </motion.div>
