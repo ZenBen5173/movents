@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { SUNWAY_SOP, SUNWAY_SOP_TEXT } from "./sop-default";
 import { REFERENCE_SUPPLIERS } from "./integrations/reference-data";
 import { mockGuests } from "./integrations/ticketing";
+import { sameEverywhere, stableToken } from "./db";
 
 type Q = (sql: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
 
@@ -33,8 +34,8 @@ function ins(q: Q, table: string, row: Record<string, unknown>) {
   );
 }
 
-const key = () => `ep_${crypto.randomBytes(18).toString("base64url")}`;
-const rid = (p: string) => `${p}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+const key = () => (sameEverywhere ? `ep_${stableToken("key", 18)}` : `ep_${crypto.randomBytes(18).toString("base64url")}`);
+const rid = (p: string) => (sameEverywhere ? `${p}_${stableToken(p)}` : `${p}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`);
 
 // Sunway's own photos where they exist; Auditorium 1 and 2 have none online.
 const SW = "https://sunwayuniversity.edu.my/sites/default/files/mediaimage/2025/";

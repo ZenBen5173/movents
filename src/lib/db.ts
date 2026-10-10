@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { SCHEMA_SQL } from "./schema";
 
 /**
@@ -69,9 +70,24 @@ export async function one<T = Row>(sql: string, params: unknown[] = []): Promise
   return rows[0] ?? null;
 }
 
+/**
+ * On serverless with the embedded DB, every instance seeds its own copy. Make
+ * those copies identical (same ids, same API keys) so a link or key from one
+ * instance works on the next. With a real DATABASE_URL ids stay random.
+ */
+const SAME_EVERYWHERE = Boolean(process.env.VERCEL) && !process.env.DATABASE_URL;
+let seq = 0;
+export function stableToken(prefix: string, bytes = 6) {
+  seq += 1;
+  return createHash("sha256").update(`${process.env.APP_SECRET ?? ""}:${prefix}:${seq}`).digest("hex").slice(0, bytes * 2);
+}
+
 export function id(prefix: string) {
+  if (SAME_EVERYWHERE) return `${prefix}_${stableToken(prefix)}`;
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 }
+
+export const sameEverywhere = SAME_EVERYWHERE;
 
 /** Insert a row from an object; JSON-able objects are stored as jsonb. */
 export async function insert<T = Row>(table: string, data: Record<string, unknown>): Promise<T> {

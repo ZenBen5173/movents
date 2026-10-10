@@ -1,5 +1,5 @@
 import "server-only";
-import { id, insert, one, query, update } from "../db";
+import { id, insert, one, query, sameEverywhere, stableToken, update } from "../db";
 import { audit } from "../audit";
 import { gate, speakerEmail, type GateResult } from "../actions";
 import { appUrl, fmtDate, fmtRM, today } from "../appurl";
@@ -483,7 +483,7 @@ export async function syncRsvps(eventId: string, source: "luma" | "meetup", simu
 }
 
 export function ticketCode() {
-  return `T-${crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+  return `T-${(sameEverywhere ? stableToken("ticket", 4) : crypto.randomUUID().replace(/-/g, "").slice(0, 8)).toUpperCase()}`;
 }
 
 // ------------------------------------------------------------------ post-event
