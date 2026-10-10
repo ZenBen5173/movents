@@ -2,7 +2,8 @@ import { C, border, hard } from "../../theme";
 import { blink, lerp, pop, soft, typed } from "../../ui/anim";
 import { F } from "../../ui/fonts";
 import { Icon } from "../../ui/Icon";
-import { Avatar, Chip, Mono, card } from "../../ui/kit";
+import { Avatar, Chip, Mono, Skel, card } from "../../ui/kit";
+import { Generate, SkCircle, SkLine, type GenTarget } from "../../ui/Generate";
 
 const LEFT_W = 520;
 const GAP = 24;
@@ -144,12 +145,12 @@ function MiniCal({ f }: { f: number }) {
   );
 }
 
-function Minutes({ f }: { f: number }) {
-  const p = soft(f, 8);
-  const clicked = f >= MEET_CLICK;
-  const morph = pop(f, MEET_CLICK, { damping: 12 });
+/** `f` is shifted so the minutes start writing when WorkBuddy clicks; `real` is the tab frame (for the user's click). */
+function Minutes({ f, real }: { f: number; real: number }) {
+  const clicked = real >= MEET_CLICK;
+  const morph = pop(real, MEET_CLICK, { damping: 12 });
   return (
-    <div style={{ position: "absolute", left: PANEL_X, top: 0, width: PANEL_W, height: 556, ...card(5), padding: `18px ${PANEL_PAD}px`, opacity: p, transform: `translateX(${(1 - p) * 40}px)` }}>
+    <div style={{ position: "relative", height: 556, ...card(5), padding: `18px ${PANEL_PAD}px` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Mono color={C.ink}>Meeting minutes</Mono>
         <Mono size={11}>Weekly sync · Tue 6 Oct</Mono>
@@ -203,7 +204,7 @@ function Minutes({ f }: { f: number }) {
             </span>
             <div style={{ width: BTN_W, height: BTN_H, position: "relative", flexShrink: 0 }}>
               {!isClicked ? (
-                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, border: border(1.5), borderRadius: 10, background: i === 0 && f >= MEET_CLICK - 8 ? C.sun : "#fff", fontWeight: 700, fontSize: 15, transform: `scale(${btn})`, boxShadow: hard(2) }}>
+                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, border: border(1.5), borderRadius: 10, background: i === 0 && real >= MEET_CLICK - 8 ? C.sun : "#fff", fontWeight: 700, fontSize: 15, transform: `scale(${btn})`, boxShadow: hard(2) }}>
                   <Icon name="plus" size={15} stroke={2.6} />
                   Task
                 </div>
@@ -230,14 +231,84 @@ function Minutes({ f }: { f: number }) {
   );
 }
 
+export const MEETINGS_GEN: GenTarget[] = [
+  { at: 14, x: PANEL_X + PANEL_W / 2 - 60, y: 170, chip: "writing minutes…" },
+  { at: 48, x: 240, y: 112, chip: "booking the next sync…" },
+  { at: 62, x: 240, y: 392 },
+];
+const [A_MIN, A_NEXT, A_CAL] = MEETINGS_GEN.map((g) => g.at);
+
 export function MeetingsTab({ f }: { f: number }) {
   return (
     <div style={{ position: "relative", height: 600 }}>
       <div style={{ width: LEFT_W, display: "flex", flexDirection: "column", gap: 20 }}>
-        <NextMeeting f={f} />
-        <MiniCal f={f} />
+        <Generate
+          f={f}
+          at={A_NEXT}
+          pad="16px 20px"
+          seed="nextmeet"
+          skel={
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <Skel w={110} h={10} f={f} />
+              <Skel w={220} h={28} f={f} />
+              <SkLine f={f} ws={[100, 80, 70]} h={24} gap={8} />
+              <SkLine f={f} ws={[34, 34, 34, 34]} h={34} gap={2} style={{ marginTop: 22 }} />
+            </div>
+          }
+        >
+          <NextMeeting f={f - A_NEXT + 4} />
+        </Generate>
+        <Generate
+          f={f}
+          at={A_CAL}
+          pad="12px 16px"
+          seed="minical"
+          skel={
+            <div>
+              <Skel w={160} h={11} f={f} />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "14px 18px", marginTop: 22, padding: "0 10px" }}>
+                {Array.from({ length: 42 }).map((_, k) => (
+                  <Skel key={k} w={30} h={16} r={6} f={f} />
+                ))}
+              </div>
+            </div>
+          }
+        >
+          <MiniCal f={f - A_CAL + 10} />
+        </Generate>
       </div>
-      <Minutes f={f} />
+      <Generate
+        f={f}
+        at={A_MIN}
+        pad={`18px ${PANEL_PAD}px`}
+        seed="minutes"
+        sparks={22}
+        style={{ position: "absolute", left: PANEL_X, top: 0, width: PANEL_W, height: 556 }}
+        skel={
+          <div>
+            <SkLine f={f} ws={[170, 200]} h={11} />
+            <Skel w={400} h={12} f={f} style={{ marginTop: 14 }} />
+            <Skel w={100} h={10} f={f} style={{ marginTop: 32 }} />
+            {[300, 260].map((w, k) => (
+              <SkLine key={k} f={f} ws={[24, w]} h={k === 0 ? 24 : 18} gap={12} style={{ marginTop: 16 }} />
+            ))}
+            <Skel w={120} h={10} f={f} style={{ marginTop: 40 }} />
+            {[0, 1, 2].map((k) => (
+              <div key={k} style={{ display: "flex", alignItems: "center", gap: 14, height: ACT_H, borderTop: `1.5px solid ${C.line}`, marginTop: k ? 0 : 12 }}>
+                <Skel w={22} h={22} r={6} f={f} />
+                <Skel w={340 - k * 40} h={14} f={f} />
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14 }}>
+                  <SkCircle f={f} size={28} />
+                  <Skel w={70} h={12} f={f} />
+                  <Skel w={BTN_W} h={BTN_H} r={10} f={f} />
+                </div>
+              </div>
+            ))}
+          </div>
+        }
+      >
+        <Minutes f={f - 6} real={f} />
+      </Generate>
     </div>
   );
 }

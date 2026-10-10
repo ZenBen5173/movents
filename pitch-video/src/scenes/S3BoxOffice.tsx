@@ -8,6 +8,8 @@ import { F } from "../ui/fonts";
 import { Icon } from "../ui/Icon";
 import { Bar, Kicker, Mono, Note, Skel, card } from "../ui/kit";
 import { Camera, Cursor } from "../ui/motion";
+import { Sparkles } from "../ui/Generate";
+import { WorkBuddyCursor, type WBChip, type WBKey } from "../ui/WorkBuddyCursor";
 
 const COLS = [430, 180, 250, 170, 200, 150];
 const HEADS = ["Event", "Countdown", "Progress", "Budget used", "Speakers", "Budget"];
@@ -15,7 +17,31 @@ const TABLE_Y = 250;
 const HEAD_H = 52;
 const ROW_H = 120;
 
-const base = (i: number) => 40 + i * 22;
+const base = (i: number) => 36 + i * 28;
+/** Frame WorkBuddy's cursor clicks row i's skeleton and its name starts writing. */
+const nameAt = (i: number) => base(i) + 34;
+
+// WorkBuddy cursor: fills the four rows in turn, then watches the columns fill, then parks by the live pill.
+const rowNameY = (i: number) => CONTENT.y + TABLE_Y + HEAD_H + i * ROW_H + ROW_H / 2 - 12;
+const NAME_X = CONTENT.x + 24 + 28 + 100;
+const COL_X = (k: number) => CONTENT.x + 24 + COLS.slice(0, k).reduce((a, b) => a + b, 0);
+const WB_KEYS: WBKey[] = [
+  { f: 40, x: 1990, y: 520 },
+  ...[0, 1, 2, 3].flatMap((i) => [
+    { f: nameAt(i) - 4, x: NAME_X, y: rowNameY(i) },
+    { f: nameAt(i), x: NAME_X, y: rowNameY(i), click: true },
+  ]),
+  { f: 196, x: COL_X(4) + 70, y: rowNameY(1) + 22 },
+  { f: 222, x: COL_X(4) + 70, y: rowNameY(2) + 22 },
+  { f: 262, x: COL_X(5) + 60, y: rowNameY(2) + 16 },
+  { f: 290, x: COL_X(5) + 60, y: rowNameY(3) + 16 },
+  { f: 330, x: CONTENT.x + 1240, y: CONTENT.y + 108 },
+];
+const WB_CHIPS: WBChip[] = [
+  { from: 50, to: 166, text: "planning 4 events…" },
+  { from: 170, to: 240, text: "researching speakers…" },
+  { from: 244, to: 312, text: "calculating budgets…" },
+];
 
 function Cell({ w, children }: { w: number; children: ReactNode }) {
   return <div style={{ width: w, flexShrink: 0, paddingRight: 18 }}>{children}</div>;
@@ -44,9 +70,10 @@ function Row({ i, f, hover }: { i: number; f: number; hover: number }) {
       <Cell w={COLS[0]}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span style={{ width: 14, height: 14, borderRadius: 7, background: f >= nameStart ? r.dot : C.line, border: border(1.5), flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+            <Sparkles f={f} at={nameStart} w={260} h={44} n={12} seed={`box${i}`} style={{ top: -8 }} />
             {f < nameStart ? (
-              <Skel w={220} h={20} f={f} />
+              <Skel w={220} h={20} f={f} style={f >= nameStart - 12 ? { outline: `2px dashed ${C.wb}`, outlineOffset: 4, boxShadow: "0 0 0 6px rgba(0,82,217,.12)" } : undefined} />
             ) : (
               <div style={{ fontFamily: F.display, fontWeight: 700, fontSize: 25, whiteSpace: "nowrap" }}>
                 {name}
@@ -187,6 +214,7 @@ export function S3BoxOffice() {
         <Note f={f} start={190} x={1240} y={968} rotate={-3} size={38}>
           all four, at the same time
         </Note>
+        <WorkBuddyCursor f={f} keys={WB_KEYS} chips={WB_CHIPS} seed="wb3" />
         <Cursor
           f={f}
           keys={[

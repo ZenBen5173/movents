@@ -7,20 +7,24 @@ import { F } from "../ui/fonts";
 import { Icon } from "../ui/Icon";
 import { Avatar, Chip, Kicker, Mono, Wristband } from "../ui/kit";
 import { Camera, Cursor, type CurKey } from "../ui/motion";
-import { OverviewTab } from "./event/Overview";
-import { TasksTab } from "./event/Tasks";
-import { RisksTab } from "./event/Risks";
-import { BudgetTab } from "./event/Budget";
-import { SpeakersTab } from "./event/Speakers";
-import { SuppliersTab } from "./event/Suppliers";
-import { MarketingTab } from "./event/Marketing";
-import { InboxTab } from "./event/Inbox";
-import { RunOfShowTab } from "./event/RunOfShow";
-import { FilesTab } from "./event/Files";
-import { SponsorsTab } from "./event/Sponsors";
-import { MeetingsTab, MEET_CLICK, MEET_TASK_BTN } from "./event/Meetings";
+import { WorkBuddyCursor, type WBChip, type WBKey } from "../ui/WorkBuddyCursor";
+import type { GenTarget } from "../ui/Generate";
+import { OverviewTab, OVERVIEW_GEN } from "./event/Overview";
+import { TasksTab, TASKS_GEN } from "./event/Tasks";
+import { RisksTab, RISKS_GEN } from "./event/Risks";
+import { BudgetTab, BUDGET_GEN } from "./event/Budget";
+import { SpeakersTab, SPEAKERS_GEN } from "./event/Speakers";
+import { SuppliersTab, SUPPLIERS_GEN } from "./event/Suppliers";
+import { MarketingTab, MARKETING_GEN } from "./event/Marketing";
+import { InboxTab, INBOX_GEN } from "./event/Inbox";
+import { RunOfShowTab, RUNOFSHOW_GEN } from "./event/RunOfShow";
+import { FilesTab, FILES_GEN } from "./event/Files";
+import { SponsorsTab, SPONSORS_GEN } from "./event/Sponsors";
+import { MeetingsTab, MEET_CLICK, MEET_TASK_BTN, MEETINGS_GEN } from "./event/Meetings";
 
 const TABS = [OverviewTab, TasksTab, RisksTab, BudgetTab, SpeakersTab, SuppliersTab, SponsorsTab, MarketingTab, InboxTab, MeetingsTab, RunOfShowTab, FilesTab];
+/** WorkBuddy's click targets per tab (same order as TABS). */
+const GENS: GenTarget[][] = [OVERVIEW_GEN, TASKS_GEN, RISKS_GEN, BUDGET_GEN, SPEAKERS_GEN, SUPPLIERS_GEN, SPONSORS_GEN, MARKETING_GEN, INBOX_GEN, MEETINGS_GEN, RUNOFSHOW_GEN, FILES_GEN];
 
 /** Frames each tab is on screen. Sum = SCENES.event (the last one runs into the wipe). */
 const TAB_LENS = [210, 87, 87, 87, 87, 87, 120, 87, 96, 135, 87, 90];
@@ -37,6 +41,28 @@ EVENT_PAGES.reduce((x, p, i) => {
   TAB_X[i] = x;
   return x + tabW(p.label) + 5;
 }, 0);
+
+/** WorkBuddy cursor path and status chips for the whole scene, in stage coords. */
+const WB_PLAN = (() => {
+  const ox = CONTENT.x;
+  const oy = CONTENT.y + TAB_CONTENT_Y;
+  const wbKeys: WBKey[] = [{ f: 18, x: 1990, y: 470 }];
+  const wbChips: WBChip[] = [];
+  GENS.forEach((gens, i) => {
+    const s = tabStart(i);
+    const end = s + TAB_LENS[i];
+    gens.forEach((t) => {
+      wbKeys.push({ f: s + t.at - 4, x: ox + t.x, y: oy + t.y });
+      wbKeys.push({ f: s + t.at, x: ox + t.x, y: oy + t.y, click: true });
+    });
+    const withChip = gens.filter((t) => t.chip);
+    withChip.forEach((t, k) => {
+      const next = withChip[k + 1];
+      wbChips.push({ from: Math.max(i === 0 ? 0 : s, s + t.at - 18), to: next ? s + next.at - 20 : Math.min(end - 4, s + gens[gens.length - 1].at + 28), text: t.chip! });
+    });
+  });
+  return { wbKeys, wbChips };
+})();
 
 export function S4Event() {
   const f = useCurrentFrame();
@@ -58,7 +84,7 @@ export function S4Event() {
     const s = tabStart(i);
     keys.push({ f: s - 16, x: tabCX(i), y: tabCY + 4 });
     keys.push({ f: s, x: tabCX(i), y: tabCY + 4, click: true });
-    keys.push({ f: s + 34, x: tabCX(i) + 60, y: tabCY + 150 });
+    keys.push({ f: s + 34, x: tabCX(i) + 40, y: tabCY + 84 });
     if (i === MEET_I) {
       // turn an action item into a task
       const bx = CONTENT.x + MEET_TASK_BTN.x;
@@ -72,6 +98,18 @@ export function S4Event() {
   const Cur = TABS[cur];
   const Prev = cur > 0 ? TABS[cur - 1] : null;
   const outT = cur > 0 ? lerp(f, tabStart(cur), tabStart(cur) + 7) : 1;
+
+  // WorkBuddy's cursor: flies in from the right, then visits each tab's skeletons in turn
+  const { wbKeys, wbChips } = WB_PLAN;
+
+  // per-tab build progress (thin strip under the tab bar)
+  const lf = f - tabStart(cur);
+  const gens = GENS[cur];
+  const prog = gens.reduce((a, g) => a + lerp(lf, g.at - 10, g.at + 8), 0) / gens.length;
+  const lastAt = gens[gens.length - 1].at;
+  const stripO = lerp(lf, lastAt + 16, lastAt + 28, 1, 0) * (cur === 0 ? lerp(f, 24, 32) : 1);
+  const live = pop(f, 22, { damping: 14 });
+  const pulse = 0.5 + 0.5 * Math.sin(f / 5);
 
   return (
     <AbsoluteFill>
@@ -96,6 +134,10 @@ export function S4Event() {
                 <div style={{ fontFamily: F.display, fontWeight: 700, fontSize: 54, lineHeight: 1.05 }}>AI Talk @ Sunway</div>
                 <div style={{ transform: `scale(${pop(f, 16)})` }}>
                   <Wristband label="Planning" bg={C.sun} size={13} />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#eaf1ff", border: `1.5px solid ${C.wb}`, borderRadius: 99, padding: "4px 12px 4px 9px", transform: `scale(${live})`, opacity: Math.min(1, live * 1.5), boxShadow: "2px 2px 0 rgba(0,82,217,.35)" }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 5, background: C.wb, boxShadow: `0 0 0 ${2 + pulse * 4}px rgba(0,82,217,${0.32 - pulse * 0.22})` }} />
+                  <Mono size={12} color={C.wb}>WorkBuddy · live</Mono>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
@@ -149,6 +191,15 @@ export function S4Event() {
             ))}
           </div>
 
+          {/* WorkBuddy build progress for this tab */}
+          {stripO > 0 && (
+            <div style={{ position: "absolute", top: TAB_Y + TAB_H + 7, left: 0, right: 0, height: 5, borderRadius: 3, background: "rgba(0,82,217,.12)", overflow: "hidden", opacity: stripO }}>
+              <div style={{ width: `${prog * 100}%`, height: "100%", borderRadius: 3, background: C.wb, position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", top: 0, bottom: 0, width: 160, left: ((f * 14) % 1600) - 160, background: "linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.75), rgba(255,255,255,0))" }} />
+              </div>
+            </div>
+          )}
+
           {/* tab content */}
           <div style={{ position: "absolute", top: TAB_CONTENT_Y, left: 0, right: 0, bottom: 0 }}>
             {Prev && outT < 1 && (
@@ -156,11 +207,12 @@ export function S4Event() {
                 <Prev f={f - tabStart(cur - 1)} />
               </div>
             )}
-            <div style={{ position: "absolute", inset: 0, opacity: cur === 0 ? 1 : outT }}>
+            <div style={{ position: "absolute", inset: 0, opacity: cur === 0 ? lerp(f, 8, 22) : outT }}>
               <Cur f={f - tabStart(cur)} />
             </div>
           </div>
         </AppFrame>
+        <WorkBuddyCursor f={f} keys={wbKeys} chips={wbChips} seed="wb4" />
         <Cursor f={f} keys={keys} />
       </Camera>
       <Kicker n="04" label="Inside one event" f={f} x={1110} y={14} dur={SCENES.event} />
