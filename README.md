@@ -11,7 +11,7 @@ Campus event planning for university societies, driven end to end by Tencent Wor
   <a href="https://movents.vercel.app"><b>Live app</b></a> ·
   <a href="https://github.com/ZenBen5173/movents"><b>GitHub</b></a> ·
   <a href="docs/Movents-Pitch-Deck.pdf"><b>Slides (PDF)</b></a> ·
-  <a href="pitch-video/out/movents-pitch-90s-small.mp4"><b>Pitch video</b></a>
+  <a href="docs/Movents-Pitch-Video.mp4"><b>Pitch video</b></a>
 </p>
 
 ![Movents Box office: every event the society is running, with countdown, progress and budget at a glance](docs/screenshots/box-office.png)
@@ -20,13 +20,14 @@ Campus event planning for university societies, driven end to end by Tencent Wor
 
 | | |
 |---|---|
-| **Group name** | _TBC_ |
+| **Group name** | Moomin Valley |
+| **Team** | Teo Zen Ben, Jeanette Tan En Jie, Colin Leong Hong Seng |
 | **Campus branch** | Taylor's University |
 | **Track** | Dormathon 2026, Track 2 (Tencent WorkBuddy) |
 | **GitHub repository** | https://github.com/ZenBen5173/movents |
 | **Deployed application** | https://movents.vercel.app |
 | **Presentation slides (PDF)** | [docs/Movents-Pitch-Deck.pdf](docs/Movents-Pitch-Deck.pdf) |
-| **Pitch video (1:30)** | [pitch-video/out/movents-pitch-90s-small.mp4](pitch-video/out/movents-pitch-90s-small.mp4) |
+| **Pitch video (1:30)** | [docs/Movents-Pitch-Video.mp4](docs/Movents-Pitch-Video.mp4) |
 
 <p align="center"><img src="docs/movents-vercel-qr.png" alt="QR code to movents.vercel.app" width="160" /><br/><sub>Scan to open the live app</sub></p>
 
