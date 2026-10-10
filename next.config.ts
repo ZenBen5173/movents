@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@electric-sql/pglite", "exceljs", "nodemailer", "postgres"],
   // The poster renderer reads these at runtime; make sure Vercel ships them.
   outputFileTracingIncludes: {
+    "/**": ["./snapshot/demo-db.tar.gz"],
     "/api/creatives/[id]/image": [
       "./node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-700-normal.woff",
       "./node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-500-normal.woff",

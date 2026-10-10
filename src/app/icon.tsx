@@ -1,11 +1,10 @@
 import { ImageResponse } from "next/og";
+import { LOGO_DATA_URI } from "@/lib/brand";
 
 export const size = { width: 64, height: 64 };
 export const contentType = "image/png";
 
 export default function Icon() {
-  return new ImageResponse(
-    <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#ff5a36", color: "#161514", fontSize: 40, fontWeight: 700, borderRadius: 14 }}>M</div>,
-    size,
-  );
+  // eslint-disable-next-line @next/next/no-img-element
+  return new ImageResponse(<img src={LOGO_DATA_URI} width={64} height={64} alt="" />, size);
 }

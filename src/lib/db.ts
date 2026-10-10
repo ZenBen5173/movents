@@ -31,8 +31,15 @@ async function createEngine(): Promise<Engine> {
   const dir =
     process.env.PGLITE_DIR ||
     (process.env.VERCEL ? "/tmp/movents-pglite" : path.join(process.cwd(), ".data", "pglite"));
+  // Serverless: every instance starts from the same pre-built demo snapshot,
+  // so ids and links match whichever instance answers.
+  const snapshot = path.join(process.cwd(), "snapshot", "demo-db.tar.gz");
+  const fresh = !fs.existsSync(path.join(dir, "PG_VERSION"));
   fs.mkdirSync(dir, { recursive: true });
-  const db = new PGlite(dir);
+  const db =
+    process.env.VERCEL && fresh && fs.existsSync(snapshot)
+      ? new PGlite(dir, { loadDataDir: new Blob([fs.readFileSync(snapshot)]) })
+      : new PGlite(dir);
   await db.waitReady;
   return {
     query: async (text, params = []) => (await db.query<Row>(text, params as unknown[])).rows,

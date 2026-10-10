@@ -155,11 +155,8 @@ function SidebarBody({ path, pending, projects, universities, user, users, socie
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2.5 px-3 pb-3 pt-4">
-        <span className="relative grid h-9 w-11 shrink-0 place-items-center rounded-md border-[1.5px] border-ink bg-tomato font-display text-sm font-bold">
-          M
-          <span aria-hidden className="absolute -left-[5px] top-1/2 size-2.5 -translate-y-1/2 rounded-full border-[1.5px] border-ink bg-[#f1eee6]" />
-          <span aria-hidden className="absolute -right-[5px] top-1/2 size-2.5 -translate-y-1/2 rounded-full border-[1.5px] border-ink bg-[#f1eee6]" />
-        </span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/movents-logo.svg" alt="Movents" className="size-10 shrink-0 transition-transform duration-300 hover:-rotate-6 hover:scale-105" />
         <div className="min-w-0 leading-tight">
           <p className="font-display text-[15px] font-bold">Movents</p>
           <p className="truncate text-[11.5px] text-muted-foreground">{society} · {university}</p>

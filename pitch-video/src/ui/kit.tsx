@@ -19,18 +19,11 @@ export function Mono({ children, size = 13, color = C.muted, style }: { children
   );
 }
 
-/** Movents logo: tomato ticket with side notches. */
-export function Logo({ size = 40, notch = C.side }: { size?: number; notch?: string }) {
-  const w = size * 1.22;
-  const n = size * 0.28;
-  return (
-    <div style={{ position: "relative", width: w, height: size, flexShrink: 0 }}>
-      <div style={{ position: "absolute", inset: 0, background: C.tomato, border: border(Math.max(1.5, size / 22)), borderRadius: size * 0.2, display: "grid", placeItems: "center", fontFamily: F.display, fontWeight: 700, fontSize: size * 0.45, color: C.ink }}>M</div>
-      {[-1, 1].map((s) => (
-        <div key={s} style={{ position: "absolute", top: "50%", [s < 0 ? "left" : "right"]: -n / 2, width: n, height: n, marginTop: -n / 2, borderRadius: "50%", background: notch, border: border(Math.max(1.5, size / 22)) }} />
-      ))}
-    </div>
-  );
+/** Movents logo: the brand mark (public/movents-logo.svg). */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function Logo({ size = 40, notch }: { size?: number; notch?: string }) {
+  const s = size * 1.25;
+  return <Img src={staticFile("movents-logo.svg")} style={{ width: s, height: s, flexShrink: 0, display: "block" }} />;
 }
 
 const AV_COLORS = [C.peach, C.sky, C.mint, C.sun];

@@ -4,6 +4,7 @@ import { one } from "@/lib/db";
 import { verifyToken, fmtDate, fmtRM } from "@/lib/appurl";
 import type { ApprovalRequest, EventRow } from "@/lib/types";
 import { FacultyDecision } from "./decision";
+import { BrandMark } from "@/components/app/brand-mark";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Proposal approval" };
@@ -17,6 +18,7 @@ export default async function FacultyPage({ params, searchParams }: { params: Pr
   const ev = req.event_id ? await one<EventRow & { venue: string | null; society: string }>("SELECT e.*, v.name AS venue, s.name AS society FROM events e LEFT JOIN venues v ON v.id = e.venue_id JOIN societies s ON s.id = e.society_id WHERE e.id = $1", [req.event_id]) : null;
   return (
     <div className="mx-auto min-h-dvh max-w-xl px-5 py-12">
+          <BrandMark />
       <p className="text-sm font-medium text-primary">Faculty advisor approval</p>
       <h1 className="mt-1 text-2xl font-semibold tracking-tight">{ev?.title ?? req.title}</h1>
       {ev && (

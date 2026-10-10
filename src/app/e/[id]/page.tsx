@@ -4,6 +4,7 @@ import { one, query } from "@/lib/db";
 import { fmtDate } from "@/lib/appurl";
 import type { EventRow, Venue } from "@/lib/types";
 import { RsvpForm } from "./rsvp-form";
+import { BrandMark } from "@/components/app/brand-mark";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,7 @@ export default async function PublicEvent({ params, searchParams }: { params: Pr
     <div className="min-h-dvh bg-background">
       <div className="relative overflow-hidden border-b border-border bg-[radial-gradient(70%_80%_at_20%_0%,color-mix(in_oklab,var(--primary)_22%,transparent),transparent)]">
         <div className="mx-auto max-w-3xl px-5 pb-10 pt-12">
+          <BrandMark />
           {via && <p className="mb-3 inline-flex rounded-full border border-border bg-card px-2.5 py-0.5 text-xs text-muted-foreground">via {via === "luma" ? "Luma" : "Meetup"} (demo page)</p>}
           <p className="text-sm font-medium text-primary">{ev.society}</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight md:text-4xl">{ev.title}</h1>
