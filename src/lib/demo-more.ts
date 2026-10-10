@@ -3,7 +3,9 @@ import { id, insert, one, query, update } from "./db";
 import { decideApproval, facultyDecision } from "./actions";
 import { Run } from "./agent/run";
 import { execute } from "./agent/pipelines";
-import { syncRsvps } from "./agent/tools";
+import { generateOpsPack, simulateEventDay, syncRsvps } from "./agent/tools";
+import { generateKit } from "./marketing";
+import { today } from "./appurl";
 import { SUNWAY_SOP } from "./sop-default";
 import { ensureSponsorDemo } from "./sponsors";
 import { ensureMeetingDemo } from "./meetings";
@@ -287,12 +289,70 @@ async function ensureEvents() {
   }
 }
 
-/** Sponsors and meetings on the AI Talk, the event the demo walks through. */
+/**
+ * Every project gets the full working set (sponsors, meetings, run sheet,
+ * marketing kit, mail), shaped to its stage: just started, mid planning,
+ * days away, or finished. Registration may stay empty for early events.
+ */
 async function ensureProjectExtras() {
-  const ai = await one<{ id: string }>("SELECT id FROM events WHERE society_id = 'soc_aitech' AND title = 'AI Talk @ Sunway'");
-  if (!ai) return;
-  await ensureSponsorDemo(ai.id);
-  await ensureMeetingDemo(ai.id);
+  const events = await query<{ id: string; title: string; date: string; status: string }>("SELECT id, title, date, status FROM events WHERE society_id = 'soc_aitech' ORDER BY date");
+  const now = today();
+  for (const ev of events) {
+    const fresh = !(await one("SELECT 1 FROM sponsors WHERE event_id = $1 LIMIT 1", [ev.id]));
+    await ensureSponsorDemo(ev.id);
+    await ensureMeetingDemo(ev.id);
+    const done = await one<{ d: number; n: number }>("SELECT count(*) FILTER (WHERE status = 'done')::int AS d, count(*)::int AS n FROM tasks WHERE event_id = $1", [ev.id]);
+    const progress = done && done.n ? done.d / done.n : 0;
+    const past = ev.date < now;
+
+    if (fresh && ev.title !== "AI Talk @ Sunway") {
+      if (past) {
+        // Finished: every sponsor has an answer.
+        await query("UPDATE sponsors SET status = 'declined', decided_at = coalesce(decided_at, replied_at, opened_at, contacted_at, now()) WHERE event_id = $1 AND status IN ('found','contacted','opened')", [ev.id]);
+        await query("UPDATE sponsors SET status = 'accepted', offer_type = 'cash', offer_amount = 1500, offer_note = 'RM1,500 cash', decided_at = coalesce(decided_at, now()) WHERE event_id = $1 AND status = 'replied'", [ev.id]);
+      } else if (progress < 0.2) {
+        // Early: outreach just started, no deals yet.
+        await query("UPDATE sponsors SET status = CASE WHEN status IN ('accepted','declined') THEN 'replied' WHEN status = 'replied' THEN 'opened' ELSE status END, offer_type = NULL, offer_amount = NULL, offer_note = NULL, decided_at = NULL WHERE event_id = $1", [ev.id]);
+        await query("UPDATE sponsors SET status = 'accepted', offer_type = 'in_kind', offer_amount = 800, offer_note = 'Snacks and drinks for the crew', decided_at = now() WHERE id = (SELECT id FROM sponsors WHERE event_id = $1 AND status = 'replied' ORDER BY company LIMIT 1)", [ev.id]);
+      }
+    }
+
+    // Meetings belong before the event (plus a debrief after a finished one).
+    const ms = await query<{ id: string; starts_at: string }>("SELECT id, starts_at FROM meetings WHERE event_id = $1 ORDER BY starts_at", [ev.id]);
+    const evDay = Date.parse(`${ev.date}T00:00:00Z`);
+    if (past) {
+      for (const [i, m] of ms.entries()) {
+        const t = new Date(m.starts_at);
+        const shifted = new Date(evDay - (ms.length - i) * 7 * 86_400_000 + (t.getUTCHours() * 3600 + t.getUTCMinutes() * 60) * 1000);
+        await query("UPDATE meetings SET starts_at = $2, status = 'done' WHERE id = $1", [m.id, shifted.toISOString()]);
+      }
+    } else {
+      for (const m of ms) if (Date.parse(m.starts_at) > evDay) await query("DELETE FROM meetings WHERE id = $1", [m.id]);
+    }
+
+    // Older seeded events never ran the agent: give them the ops pack, kit, mail and guests.
+    if (!(await one("SELECT 1 FROM runsheet_items WHERE event_id = $1 LIMIT 1", [ev.id]))) await generateOpsPack(ev.id).catch(() => null);
+    if (!(await one("SELECT 1 FROM creatives WHERE event_id = $1 LIMIT 1", [ev.id]))) {
+      await generateKit(ev.id, { withImages: false }).catch(() => null);
+      if (past) await query("UPDATE creatives SET status = 'posted', posted_url = 'https://www.instagram.com/' WHERE event_id = $1", [ev.id]);
+    }
+    if (!(await one("SELECT 1 FROM emails WHERE event_id = $1 LIMIT 1", [ev.id]))) {
+      const spk = await query<{ id: string; name: string; email: string | null }>("SELECT id, name, email FROM speakers WHERE event_id = $1 LIMIT 2", [ev.id]);
+      const mails: [string, string, string, string, string | null][] = [
+        ...spk.map((s) => ["speaker_outreach", s.email ?? "speaker@speaker.example", `Speaking invitation: ${ev.title}`, `<p>Hi ${s.name.split(" ")[0]},</p><p>We would love you to speak at <b>${ev.title}</b>.</p>`, s.id] as [string, string, string, string, string | null]),
+        ["vendor_quote", "sales@food-supplier.example", `Quotation request: ${ev.title}`, `<p>Hello,</p><p>Could you send a written quotation for catering at <b>${ev.title}</b>?</p>`, null],
+        ["faculty_submission", "farah.advisor@movents.test", `Proposal for approval: ${ev.title}`, `<p>Dear Dr. Farah,</p><p>The proposal for <b>${ev.title}</b> is attached for your approval.</p>`, null],
+      ];
+      for (const [kind, to, subject, body, related] of mails) {
+        await insert("emails", { id: id("eml"), event_id: ev.id, kind, to_addr: to, subject, body, status: "sent", provider: "demo", related_id: related, sent_by: "usr_committee", sent_at: new Date(Date.parse(`${ev.date}T00:00:00Z`) - 20 * 86_400_000) });
+      }
+    }
+    if (past && !(await one("SELECT 1 FROM rsvps WHERE event_id = $1 LIMIT 1", [ev.id]))) await simulateEventDay(ev.id).catch(() => null);
+    if (past || progress >= 0.3) {
+      // Ran or running publicly: both ticket pages are live.
+      await query("UPDATE events SET luma = coalesce(luma, jsonb_build_object('url', 'https://lu.ma/' || id, 'mode', 'mock', 'synced_at', now())), meetup = coalesce(meetup, jsonb_build_object('url', 'https://www.meetup.com/sunway-ai-tech/events/' || id, 'mode', 'mock', 'synced_at', now())) WHERE id = $1", [ev.id]);
+    }
+  }
 }
 
 let running: Promise<void> | null = null;
