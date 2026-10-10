@@ -31,7 +31,7 @@ const time = (m: number) => {
 };
 
 export function RunOfShowTab({ f }: { f: number }) {
-  const now = lerp(f, 20, 100) * 175;
+  const now = lerp(f, 18, 84) * 175;
   return (
     <div style={{ ...card(5), padding: "14px 22px 16px", height: 606, position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>

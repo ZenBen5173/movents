@@ -21,7 +21,7 @@ const FLY = [CLICK + 4, CLICK + 34] as const;
 const HERO = { x: 0, y: 36, w: 1400, h: 400 };
 const CAL_Y = 700;
 const PLAN_Y = 1250;
-const PLAN_START = 350;
+const PLAN_START = 320;
 
 const BOOKINGS: Record<number, { t: string; bg: string; ours?: boolean }> = {
   7: { t: "Robotics Club", bg: C.sky },
@@ -111,11 +111,11 @@ export function S6Venues() {
   const fly = lerp(f, FLY[0], FLY[1], 0, 1, EIO);
   const gridFade = 1 - lerp(f, CLICK + 2, CLICK + 16);
   const page = lerp(f, FLY[0] + 6, FLY[1]);
-  const scroll = f < 290 ? lerp(f, 160, 205, 0, CAL_Y - 10, EIO) : lerp(f, 290, 340, CAL_Y - 10, PLAN_Y - 10, EIO);
+  const scroll = f < 268 ? lerp(f, 160, 205, 0, CAL_Y - 10, EIO) : lerp(f, 268, 318, CAL_Y - 10, PLAN_Y - 10, EIO);
   const r0 = { x: tileX(1), y: tileY(1), w: TILE_W, h: PHOTO_H };
   const rect = { x: mix(r0.x, HERO.x, fly), y: mix(r0.y, HERO.y, fly), w: mix(r0.w, HERO.w, fly), h: mix(r0.h, HERO.h, fly) };
   const counts = planCounts(f, PLAN_START);
-  const hl = f > 470 ? CLUSTERS[Math.floor((f - 470) / 8) % CLUSTERS.length].id : undefined;
+  const hl = f > 440 ? CLUSTERS[Math.floor((f - 440) / 8) % CLUSTERS.length].id : undefined;
   const onPage = f >= FLY[0];
   return (
     <AbsoluteFill>
@@ -126,8 +126,8 @@ export function S6Venues() {
           { f: 80, s: 1.05, x: 1020, y: 560 },
           { f: 110, s: 1.05, x: 1020, y: 560 },
           { f: 150, s: 1, x: 960, y: 540 },
-          { f: 340, s: 1, x: 960, y: 540 },
-          { f: 380, s: 1.1, x: 870, y: 500 },
+          { f: 318, s: 1, x: 960, y: 540 },
+          { f: 358, s: 1.1, x: 870, y: 500 },
           { f: SCENES.venues, s: 1.1, x: 870, y: 500 },
         ]}
       >

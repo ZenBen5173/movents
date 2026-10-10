@@ -61,10 +61,10 @@ export function InboxTab({ f }: { f: number }) {
             <Mono size={11.5} color={C.blue}>WorkBuddy drafted a reply</Mono>
           </div>
           <div style={{ fontSize: 17, lineHeight: 1.5, marginTop: 8, minHeight: 78 }}>
-            {typed(REPLY, f, 40, 2.4)}
-            {f > 40 && f < 40 + REPLY.length / 2.4 + 8 && blink(f) && <span style={{ display: "inline-block", width: 2.5, height: 19, background: C.blue, marginLeft: 2, verticalAlign: "text-bottom" }} />}
+            {typed(REPLY, f, 34, 2.9)}
+            {f > 34 && f < 34 + REPLY.length / 2.9 + 8 && blink(f) && <span style={{ display: "inline-block", width: 2.5, height: 19, background: C.blue, marginLeft: 2, verticalAlign: "text-bottom" }} />}
           </div>
-          <div style={{ display: "flex", gap: 10, marginTop: 10, opacity: lerp(f, 90, 98) }}>
+          <div style={{ display: "flex", gap: 10, marginTop: 10, opacity: lerp(f, 80, 88) }}>
             <span style={{ background: C.ink, color: "#fff", borderRadius: 10, padding: "7px 16px", fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 8 }}>
               <Icon name="send" size={15} color="#fff" /> Send
             </span>

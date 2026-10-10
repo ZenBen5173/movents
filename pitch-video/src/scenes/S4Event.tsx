@@ -17,22 +17,25 @@ import { MarketingTab } from "./event/Marketing";
 import { InboxTab } from "./event/Inbox";
 import { RunOfShowTab } from "./event/RunOfShow";
 import { FilesTab } from "./event/Files";
+import { SponsorsTab } from "./event/Sponsors";
+import { MeetingsTab, MEET_CLICK, MEET_TASK_BTN } from "./event/Meetings";
 
-const TABS = [OverviewTab, TasksTab, RisksTab, BudgetTab, SpeakersTab, SuppliersTab, MarketingTab, InboxTab, RunOfShowTab, FilesTab];
+const TABS = [OverviewTab, TasksTab, RisksTab, BudgetTab, SpeakersTab, SuppliersTab, SponsorsTab, MarketingTab, InboxTab, MeetingsTab, RunOfShowTab, FilesTab];
 
-const OVERVIEW_LEN = 225;
-const TAB_LEN = 105;
-export const tabStart = (i: number) => (i === 0 ? 0 : OVERVIEW_LEN + (i - 1) * TAB_LEN);
+/** Frames each tab is on screen. Sum = SCENES.event (the last one runs into the wipe). */
+const TAB_LENS = [210, 87, 87, 87, 87, 87, 120, 87, 96, 135, 87, 90];
+export const tabStart = (i: number) => TAB_LENS.slice(0, i).reduce((a, b) => a + b, 0);
+const MEET_I = TABS.indexOf(MeetingsTab);
 
 const TAB_Y = 172;
 const TAB_H = 52;
 export const TAB_CONTENT_Y = TAB_Y + TAB_H + 22;
 
-const tabW = (label: string) => 62 + label.length * 9.4;
+const tabW = (label: string) => 44 + label.length * 8.6;
 const TAB_X: number[] = [];
 EVENT_PAGES.reduce((x, p, i) => {
   TAB_X[i] = x;
-  return x + tabW(p.label) + 6;
+  return x + tabW(p.label) + 5;
 }, 0);
 
 export function S4Event() {
@@ -50,12 +53,20 @@ export function S4Event() {
   // cursor visits each tab
   const tabCY = CONTENT.y + TAB_Y + TAB_H / 2;
   const tabCX = (i: number) => CONTENT.x + TAB_X[i] + tabW(EVENT_PAGES[i].label) / 2;
-  const keys: CurKey[] = [{ f: 190, x: 1500, y: 860 }];
+  const keys: CurKey[] = [{ f: 165, x: 1500, y: 860 }];
   for (let i = 1; i < TABS.length; i++) {
     const s = tabStart(i);
     keys.push({ f: s - 16, x: tabCX(i), y: tabCY + 4 });
     keys.push({ f: s, x: tabCX(i), y: tabCY + 4, click: true });
     keys.push({ f: s + 34, x: tabCX(i) + 60, y: tabCY + 150 });
+    if (i === MEET_I) {
+      // turn an action item into a task
+      const bx = CONTENT.x + MEET_TASK_BTN.x;
+      const by = CONTENT.y + TAB_CONTENT_Y + MEET_TASK_BTN.y;
+      keys.push({ f: s + MEET_CLICK - 14, x: bx, y: by });
+      keys.push({ f: s + MEET_CLICK, x: bx, y: by, click: true });
+      keys.push({ f: s + MEET_CLICK + 22, x: bx + 70, y: by + 70 });
+    }
   }
 
   const Cur = TABS[cur];
@@ -131,8 +142,8 @@ export function S4Event() {
             <div style={{ position: "absolute", left: indX, width: indW, top: 4, height: TAB_H - 10, background: "#fff", border: border(2), borderRadius: 11, boxShadow: hard(3) }} />
             <div style={{ position: "absolute", left: indX + 14, width: indW - 28, bottom: -2, height: 4, background: C.tomato }} />
             {EVENT_PAGES.map((p, i) => (
-              <div key={p.label} style={{ position: "absolute", left: TAB_X[i], width: tabW(p.label), top: 4, height: TAB_H - 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: F.body, fontSize: 17, fontWeight: i === cur ? 700 : 500, color: i === cur ? C.ink : C.muted, opacity: lerp(f, 14 + i * 2, 24 + i * 2), whiteSpace: "nowrap" }}>
-                <Icon name={p.icon} size={17} color={i === cur ? C.tomato : C.muted} />
+              <div key={p.label} style={{ position: "absolute", left: TAB_X[i], width: tabW(p.label), top: 4, height: TAB_H - 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, fontFamily: F.body, fontSize: 15.5, fontWeight: i === cur ? 700 : 500, color: i === cur ? C.ink : C.muted, opacity: lerp(f, 14 + i * 1.6, 24 + i * 1.6), whiteSpace: "nowrap" }}>
+                <Icon name={p.icon} size={16} color={i === cur ? C.tomato : C.muted} />
                 {p.label}
               </div>
             ))}

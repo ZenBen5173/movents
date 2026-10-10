@@ -10,7 +10,7 @@ import { Icon, type IconName } from "../ui/Icon";
 import { Avatar, Kicker, Mono, Stamp, card } from "../ui/kit";
 import { Camera } from "../ui/motion";
 
-const S = (k: number) => 26 + k * 34;
+const S = (k: number) => 24 + k * 31;
 const STEP_H = 108;
 
 type Step = { title: string; who: string; when: string; desc: string; icon: IconName; extra?: (f: number) => ReactNode };
@@ -79,7 +79,7 @@ const STEPS: Step[] = [
 export function S5Sop() {
   const f = useCurrentFrame();
   const head = soft(f, 4);
-  const scroll = lerp(f, 150, 320, 0, 190, EIO);
+  const scroll = lerp(f, 138, 292, 0, 190, EIO);
   const docs = [
     { t: "Pre-event proposal", k: "Template · DOCX", a: C.tomato, v: "text" as const, at: S(1) + 6, step: 1, x: 0, y: 0, r: -3 },
     { t: "Speaker profile", k: "Template · DOCX", a: C.sky, v: "profile" as const, at: S(4) + 6, step: 4, x: 240, y: 30, r: 3 },

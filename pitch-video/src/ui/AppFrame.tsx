@@ -13,8 +13,10 @@ export const EVENT_PAGES: { label: string; icon: IconName }[] = [
   { label: "Budget", icon: "wallet" },
   { label: "Speakers", icon: "mic" },
   { label: "Suppliers", icon: "store" },
+  { label: "Sponsors", icon: "handshake" },
   { label: "Marketing", icon: "megaphone" },
   { label: "Inbox", icon: "inbox" },
+  { label: "Meetings", icon: "calendarClock" },
   { label: "Run of show", icon: "clock" },
   { label: "Files", icon: "folder" },
 ];
@@ -54,12 +56,13 @@ function buildRows(p: SidebarProps): Row[] {
   PROJECTS.forEach((pr, i) => {
     const a = p.projectAppear ? p.projectAppear[i] ?? 0 : 1;
     rows.push({ key: `proj:${i}`, label: pr.title, depth: 0, kind: "proj", dot: pr.dot, date: pr.date, h: 36 * a, o: a });
-    if (i === 0 && p.openProject) EVENT_PAGES.forEach((pg) => rows.push({ key: `p:${pg.label}`, label: pg.label, icon: pg.icon, depth: 1, kind: "sub", h: 34, o: 1 }));
+    // 12 event pages: slightly tighter rows so the whole sidebar still fits
+    if (i === 0 && p.openProject) EVENT_PAGES.forEach((pg) => rows.push({ key: `p:${pg.label}`, label: pg.label, icon: pg.icon, depth: 1, kind: "sub", h: 31, o: 1 }));
   });
   rows.push({ key: "h:u", label: "Universities", depth: 0, kind: "head", h: 44, o: 1 });
   rows.push({ key: "uni", label: "Sunway University", icon: "landmark", depth: 0, kind: "uni", h: 36, o: 1 });
   if (p.openUni) UNI_PAGES.forEach((pg) => rows.push({ key: `u:${pg.label}`, label: pg.label, icon: pg.icon, depth: 1, kind: "sub", h: 34, o: 1 }));
-  rows.push({ key: "h:a", label: "Admin", depth: 0, kind: "head", h: 44, o: 1 });
+  if (!p.openProject) rows.push({ key: "h:a", label: "Admin", depth: 0, kind: "head", h: 44, o: 1 });
   rows.push({ key: "nav:Settings", label: "Settings", icon: "settings", depth: 0, kind: "nav", h: 38, o: 1 });
   return rows;
 }
@@ -88,7 +91,7 @@ export function Sidebar(p: SidebarProps) {
       </div>
       <div style={{ position: "relative", flex: 1, padding: "0 12px", overflow: "hidden" }}>
         {act && (
-          <div style={{ position: "absolute", left: 12 + activeDepth * 20, right: 12, top: hy + 2, height: 32, background: "#fff", border: border(1.5), borderRadius: 9, boxShadow: hard(2) }} />
+          <div style={{ position: "absolute", left: 12 + activeDepth * 20, right: 12, top: hy + 1 + (act.h - 32) / 2, height: 32, background: "#fff", border: border(1.5), borderRadius: 9, boxShadow: hard(2) }} />
         )}
         {rows.map((r) => {
           const isAct = p.active === r.key;

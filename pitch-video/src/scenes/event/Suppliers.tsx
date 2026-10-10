@@ -77,7 +77,7 @@ export function SuppliersTab({ f }: { f: number }) {
             <div style={{ fontSize: 15, color: C.muted }}>Approved by the President · paid 9 Oct</div>
           </div>
           <div style={{ background: C.mint, borderLeft: `2px dashed ${C.ink}`, padding: "0 26px", display: "grid", placeItems: "center" }}>
-            <Stamp f={f} start={66} color={C.green} size={20}>Paid</Stamp>
+            <Stamp f={f} start={60} color={C.green} size={20}>Paid</Stamp>
           </div>
         </div>
         <div style={{ ...card(4), padding: "14px 20px", background: C.sun, transform: `translateY(${(1 - pop(f, 58)) * 60}px) rotate(1.5deg)`, opacity: lerp(f, 58, 64), maxWidth: 420 }}>

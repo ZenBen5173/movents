@@ -27,9 +27,9 @@ export const SCENES = {
   prompt: 270,
   parallel: 330,
   boxOffice: 420,
-  event: 1170,
-  sop: 420,
-  venues: 510,
+  event: 1260,
+  sop: 360,
+  venues: 480,
   vendors: 300,
   end: 180,
 } as const;

@@ -82,7 +82,7 @@ export function MarketingTab({ f }: { f: number }) {
             </div>
             <Icon name="message" size={24} />
             <Icon name="send" size={23} />
-            <span style={{ marginLeft: "auto", fontWeight: 700, fontSize: 15 }}>{count(f, 50, 40, 284)} likes</span>
+            <span style={{ marginLeft: "auto", fontWeight: 700, fontSize: 15 }}>{count(f, 46, 34, 284)} likes</span>
           </div>
           <div style={{ fontSize: 15.5, marginTop: 8, lineHeight: 1.4, minHeight: 44 }}>
             <b>sunway.aitech</b> {typed(caption, f, 30, 1.6)}
@@ -104,7 +104,7 @@ export function MarketingTab({ f }: { f: number }) {
         })}
         <div style={{ marginTop: 22, borderTop: `1.5px dashed ${C.line}`, paddingTop: 14, opacity: lerp(f, 50, 60) }}>
           <Mono size={11.5}>Reach so far</Mono>
-          <div style={{ fontFamily: F.display, fontWeight: 700, fontSize: 36 }}>{count(f, 50, 40, 2140).toLocaleString("en-US")}</div>
+          <div style={{ fontFamily: F.display, fontWeight: 700, fontSize: 36 }}>{count(f, 46, 34, 2140).toLocaleString("en-US")}</div>
           <div style={{ fontSize: 14.5, color: C.muted }}>across IG, Luma and email</div>
         </div>
       </div>
