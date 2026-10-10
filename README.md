@@ -62,6 +62,8 @@ Many events can be planned at once, each private to its own team.
 | ![Budget](docs/screenshots/budget.png) | ![Speakers](docs/screenshots/speakers.png) |
 | **Backstage approvals** | **Venue floor plan** |
 | ![Backstage](docs/screenshots/backstage.png) | ![Floor plan](docs/screenshots/floor-plan.png) |
+| **Sponsors** | **Meetings and minutes** |
+| ![Sponsors](docs/screenshots/sponsors.png) | ![Meetings](docs/screenshots/meetings.png) |
 | **University vendor list** | |
 | ![Vendors](docs/screenshots/vendors.png) | |
 
@@ -74,6 +76,8 @@ Many events can be planned at once, each private to its own team.
 - Risks: 5x5 heat map and a compact register with mitigation tasks.
 - Budget: donut charts, live budget sheet, 90% spend alert, swap suppliers with one click.
 - Speakers as lanyard passes with profile documents; suppliers with quote, contract and deposit tracking.
+- Sponsors: find sponsors, send outreach with the proposal attached (approval gated), track opens and replies, and see confirmed cash and in-kind offers on a donut.
+- Meetings: schedule with templates and calendar invites, agenda, attendance, minutes, decisions, and action items that become tasks.
 - Registration with Luma and Meetup sync, public sign-up page, waitlist, and QR door check-in with tabs.
 - Marketing kit: poster, Instagram and LinkedIn posts with captions (Nano Banana via WorkBuddy).
 - Per-event inbox, run of show timetable, editable crew roles, project lead and co-lead contacts.

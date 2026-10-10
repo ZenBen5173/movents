@@ -29,6 +29,7 @@ export type ApprovalItem = ApprovalRequest & {
 
 export const ACTION_ICON: Record<ActionType, IconName> = {
   "email.speaker": "mail",
+  "email.sponsor": "handshake",
   "email.vendor": "mail",
   "email.faculty": "landmark",
   "publish.luma": "rocket",

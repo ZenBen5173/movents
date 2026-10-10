@@ -56,3 +56,5 @@ feedback, writes the PDF/Word report and feeds lessons back into the SOP knowled
 - `sync_rsvps` — pull Luma/Meetup RSVPs.
 - `list_my_events`: events the user is on. `event_team`: show, add or remove people.
 - `list_event_emails`: the event's mail (what was sent to speakers, suppliers, faculty, attendees).
+- Meetings: `schedule_meeting` (Malaysia time; `template` kickoff | weekly | vendor | runthrough | debrief prefills the agenda; attendees default to the team), `list_meetings` (shows which need minutes), `record_minutes` (minutes, decisions, action items with owner names; `create_tasks: true` adds them to the event's tasks; marks the meeting done).
+- Sponsors: web-search Malaysian companies that fit, then `save_sponsors`; `send_sponsor_outreach` emails them with the proposal PDF attached (role-gated); `record_sponsor_reply` logs replies and offers; `list_sponsors` shows the funnel.

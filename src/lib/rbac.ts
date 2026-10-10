@@ -3,11 +3,13 @@ import type { ActionType, ApprovalRequest, Role, User } from "./types";
 /** Department in the society that owns each kind of outbound action. */
 export const ACTION_DEPARTMENT: Partial<Record<ActionType, string>> = {
   "email.speaker": "Programmes",
+  "email.sponsor": "Programmes",
   "email.vendor": "Logistics",
 };
 
 export const ACTION_LABEL: Record<ActionType, string> = {
   "email.speaker": "Speaker outreach email",
+  "email.sponsor": "Sponsor outreach email",
   "email.vendor": "Vendor email",
   "email.faculty": "Faculty submission",
   "publish.luma": "Publish to Luma",

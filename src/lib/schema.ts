@@ -349,5 +349,48 @@ CREATE TABLE IF NOT EXISTS event_mailboxes (
   label text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-UPDATE venues SET photo_url = '/venues/rooftop-terrace.jpg' WHERE id = 'ven_rooftop'
+UPDATE venues SET photo_url = '/venues/rooftop-terrace.jpg' WHERE id = 'ven_rooftop';
+CREATE TABLE IF NOT EXISTS sponsors (
+  id text PRIMARY KEY,
+  event_id text NOT NULL,
+  company text NOT NULL,
+  industry text,
+  website text,
+  logo_url text,
+  contact_name text,
+  contact_email text,
+  ask text,
+  status text NOT NULL DEFAULT 'found',
+  offer_type text,
+  offer_amount double precision,
+  offer_note text,
+  notes text,
+  source text NOT NULL DEFAULT 'workbuddy',
+  fit_reason text,
+  contacted_at timestamptz,
+  opened_at timestamptz,
+  replied_at timestamptz,
+  decided_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_sponsors_event ON sponsors(event_id);
+CREATE TABLE IF NOT EXISTS meetings (
+  id text PRIMARY KEY,
+  event_id text NOT NULL,
+  title text NOT NULL,
+  starts_at timestamptz NOT NULL,
+  duration_min integer NOT NULL DEFAULT 60,
+  location text,
+  meeting_url text,
+  agenda jsonb NOT NULL DEFAULT '[]'::jsonb,
+  attendees jsonb NOT NULL DEFAULT '[]'::jsonb,
+  minutes text,
+  decisions jsonb NOT NULL DEFAULT '[]'::jsonb,
+  action_items jsonb NOT NULL DEFAULT '[]'::jsonb,
+  status text NOT NULL DEFAULT 'scheduled',
+  created_by text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_meetings_event ON meetings(event_id);
+ALTER TABLE meetings ADD COLUMN IF NOT EXISTS attended jsonb NOT NULL DEFAULT '[]'::jsonb
 `;

@@ -5,6 +5,8 @@ import { Run } from "./agent/run";
 import { execute } from "./agent/pipelines";
 import { syncRsvps } from "./agent/tools";
 import { SUNWAY_SOP } from "./sop-default";
+import { ensureSponsorDemo } from "./sponsors";
+import { ensureMeetingDemo } from "./meetings";
 import type { ApprovalRequest, Sop, User } from "./types";
 
 /**
@@ -248,6 +250,9 @@ async function ensureEvents() {
     for (const sp of sps) {
       const [name, headline, pic] = PEOPLE[pool++ % PEOPLE.length];
       await query("UPDATE runsheet_items SET activity = replace(activity, $2, $3) WHERE event_id = $1", [ev.id, sp.name, name]);
+      await query("UPDATE approval_requests SET title = replace(title, $2, $3) WHERE event_id = $1", [ev.id, sp.name, name]);
+      await query("UPDATE emails SET subject = replace(subject, $2, $3), body = replace(body, $2, $3), intended_to = replace(coalesce(intended_to, ''), $2, $3) WHERE event_id = $1", [ev.id, sp.name, name]);
+      await query("UPDATE creatives SET caption = replace(caption, $2, $3) WHERE event_id = $1", [ev.id, sp.name, name]);
       await update("speakers", sp.id, { name, headline, photo_url: `https://randomuser.me/api/portraits/${pic}.jpg`, email: `${name.toLowerCase().replace(/[^a-z]+/g, ".")}@speaker.example`, talk_title: null, source: "workbuddy", status: p.progress > 0.5 ? "confirmed" : p.progress > 0.1 ? "contacted" : "found" });
     }
 
@@ -282,6 +287,14 @@ async function ensureEvents() {
   }
 }
 
+/** Sponsors and meetings on the AI Talk, the event the demo walks through. */
+async function ensureProjectExtras() {
+  const ai = await one<{ id: string }>("SELECT id FROM events WHERE society_id = 'soc_aitech' AND title = 'AI Talk @ Sunway'");
+  if (!ai) return;
+  await ensureSponsorDemo(ai.id);
+  await ensureMeetingDemo(ai.id);
+}
+
 let running: Promise<void> | null = null;
 
 export function ensureMore() {
@@ -292,6 +305,7 @@ export function ensureMore() {
       try {
         await ensureUniversities();
         await ensureEvents();
+        await ensureProjectExtras();
       } finally {
         process.env.AGENT_STEP_DELAY_MS = prev ?? "";
       }

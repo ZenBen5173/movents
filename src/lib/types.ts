@@ -195,6 +195,7 @@ export type ApprovalRequest = {
 
 export type ActionType =
   | "email.speaker"
+  | "email.sponsor"
   | "email.vendor"
   | "email.faculty"
   | "publish.luma"
@@ -311,4 +312,30 @@ export type Creative = {
   posted_url: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type SponsorStatus = "found" | "contacted" | "opened" | "replied" | "accepted" | "declined";
+
+export type Sponsor = {
+  id: string;
+  event_id: string;
+  company: string;
+  industry: string | null;
+  website: string | null;
+  logo_url: string | null;
+  contact_name: string | null;
+  contact_email: string | null;
+  ask: string | null;
+  status: SponsorStatus;
+  offer_type: "cash" | "in_kind" | null;
+  offer_amount: number | null;
+  offer_note: string | null;
+  notes: string | null;
+  source: string;
+  fit_reason: string | null;
+  contacted_at: string | null;
+  opened_at: string | null;
+  replied_at: string | null;
+  decided_at: string | null;
+  created_at: string;
 };

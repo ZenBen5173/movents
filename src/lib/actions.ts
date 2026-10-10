@@ -7,7 +7,7 @@ import { emailShell, sendEmail } from "./integrations/email";
 import { buildIcs, calendarMode, createGoogleEvent } from "./integrations/gcal";
 import { lumaCreateEvent, meetupCreateEvent } from "./integrations/ticketing";
 import { createCheckout, paymentsMode } from "./integrations/payments";
-import type { ActionType, ApprovalRequest, EventRow, Speaker, Task, University, User, Vendor, Venue } from "./types";
+import type { ActionType, ApprovalRequest, EventRow, Speaker, Sponsor, Task, University, User, Vendor, Venue } from "./types";
 
 export type GateResult =
   | { status: "executed"; result: Record<string, unknown>; reason: string }
@@ -189,6 +189,24 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
       if (email.status === "failed") throw new Error(email.error ?? "Email failed");
       await update("speakers", sp.id, p.follow_up ? { status: "followed_up", followed_up_at: new Date() } : { status: "contacted", contacted_at: new Date() });
       return { email_id: email.id, to: email.to_addr, intended_to: email.intended_to, provider: email.provider, delivery: email.status };
+    }
+    case "email.sponsor": {
+      const sp = await one<Sponsor>("SELECT * FROM sponsors WHERE id = $1", [p.sponsor_id]);
+      if (!sp) throw new Error("Sponsor not found");
+      // The proposal travels as a link (the sender has no attachment support); the pixel marks the email opened.
+      const pixel = `<img src="${appUrl()}/api/track/sponsor/${sp.id}?t=${signToken(sp.id)}" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px" />`;
+      const email = await sendEmail({
+        to: String(p.to ?? sp.contact_email ?? `partnerships@${sp.company.toLowerCase().replace(/[^a-z0-9]+/g, "")}.example`),
+        subject: String(p.subject),
+        html: `${String(p.html)}${pixel}`,
+        kind: "sponsor_outreach",
+        eventId: sp.event_id,
+        relatedId: sp.id,
+        sentBy: actor.id,
+      });
+      if (email.status === "failed") throw new Error(email.error ?? "Email failed");
+      await update("sponsors", sp.id, sp.status === "found" ? { status: "contacted", contacted_at: new Date() } : { contacted_at: sp.contacted_at ?? new Date() });
+      return { email_id: email.id, to: email.to_addr, intended_to: email.intended_to, provider: email.provider, delivery: email.status, proposal: `${appUrl()}/api/outputs/${sp.event_id}/proposal.pdf` };
     }
     case "email.vendor": {
       const email = await sendEmail({

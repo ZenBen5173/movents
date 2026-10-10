@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { setEventMailbox } from "@/app/actions-inbox";
 import { StageEmpty } from "@/components/ep/kit";
 
-type Group = "speakers" | "suppliers" | "faculty" | "attendees" | "other";
+type Group = "speakers" | "suppliers" | "sponsors" | "faculty" | "attendees" | "other";
 
 export type InboxMail = {
   id: string;
@@ -32,6 +32,7 @@ const GROUPS: { key: Group | "all"; label: string }[] = [
   { key: "all", label: "All" },
   { key: "speakers", label: "Speakers" },
   { key: "suppliers", label: "Suppliers" },
+  { key: "sponsors", label: "Sponsors" },
   { key: "faculty", label: "Faculty" },
   { key: "attendees", label: "Attendees" },
   { key: "other", label: "Other" },
@@ -40,6 +41,7 @@ const GROUPS: { key: Group | "all"; label: string }[] = [
 const CHIP: Record<Group, string> = {
   speakers: "bg-peach",
   suppliers: "bg-mint",
+  sponsors: "bg-[#e9d5ff]",
   faculty: "bg-sky",
   attendees: "bg-sun",
   other: "bg-sand",
@@ -49,6 +51,7 @@ const KIND: Record<string, string> = {
   speaker_outreach: "Invite",
   speaker_followup: "Follow up",
   vendor: "Supplier",
+  sponsor_outreach: "Sponsor",
   vendor_quote: "Quote",
   vendor_reminder: "Reminder",
   faculty_submission: "Proposal",

@@ -30,9 +30,10 @@ export async function setMailbox(eventId: string, address: string, label: string
 }
 
 /** Group an email kind into the inbox filter buckets. */
-export function mailGroup(kind: string): "speakers" | "suppliers" | "faculty" | "attendees" | "other" {
+export function mailGroup(kind: string): "speakers" | "suppliers" | "sponsors" | "faculty" | "attendees" | "other" {
   if (kind.startsWith("speaker")) return "speakers";
   if (kind.startsWith("vendor")) return "suppliers";
+  if (kind.startsWith("sponsor")) return "sponsors";
   if (kind.startsWith("faculty")) return "faculty";
   if (kind.startsWith("attendee") || kind.startsWith("feedback") || kind === "pre_event" || kind === "post_event") return "attendees";
   return "other";
@@ -56,11 +57,12 @@ export function eventEmails(eventId: string) {
     sender: string | null;
   }>(
     `SELECT m.id, m.kind, m.to_addr, m.intended_to, m.subject, m.body, m.status, m.provider, m.error, m.sent_at, m.created_at,
-            COALESCE(s.name, v.name, r.name, (SELECT u.name FROM users u WHERE u.email = COALESCE(m.intended_to, m.to_addr) LIMIT 1)) AS who,
+            COALESCE(s.name, v.name, sp.company, r.name, (SELECT u.name FROM users u WHERE u.email = COALESCE(m.intended_to, m.to_addr) LIMIT 1)) AS who,
             su.name AS sender
      FROM emails m
      LEFT JOIN speakers s ON s.id = m.related_id
      LEFT JOIN vendors v ON v.id = m.related_id
+     LEFT JOIN sponsors sp ON sp.id = m.related_id
      LEFT JOIN rsvps r ON r.id = m.related_id
      LEFT JOIN users su ON su.id = m.sent_by
      WHERE m.event_id = $1

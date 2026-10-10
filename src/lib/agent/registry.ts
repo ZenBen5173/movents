@@ -12,6 +12,9 @@ import { generateKit, imageHref, setImage } from "../marketing";
 import { update as updateRow } from "../db";
 import type { AgentRun, Creative, StepStatus, User } from "../types";
 import { addMembers, assertMember, listMembers, removeMember, resolvePeople, visibleSql } from "../members";
+import { offerLabel, outreachSponsors, recordSponsor, saveSponsors, type Decision, type SponsorInput } from "../sponsors";
+import { audit } from "../audit";
+import type { Sponsor } from "../types";
 
 type Args = Record<string, unknown>;
 type Tool = {
@@ -133,6 +136,171 @@ export const TOOLS: Tool[] = [
         [eventId],
       );
       return { mailbox: box[0]?.address ?? null, inbox_url: `${appUrl()}/events/${eventId}/inbox`, count: emails.length, emails: emails.map((e) => ({ ...e, link: `${appUrl()}/events/${eventId}/inbox#${e.id}` })) };
+    },
+  },
+  {
+    name: "save_sponsors",
+    description: "Save sponsors YOU found with your own web search (Malaysian companies that fit the event topic: tech, banks, telcos, F&B...). Skips companies already on the event. Sponsors UI: /events/<event_id>/sponsors.",
+    inputSchema: { type: "object", properties: { ...ev, sponsors: { type: "array", items: { type: "object", properties: { company: str("Company name"), website: str("Company website"), contact_name: str("Contact person, if found"), contact_email: str("Partnerships / marketing email, if public"), industry: str("e.g. Banking, Technology, F&B, Telco"), ask: str('What to ask for, e.g. "RM3,000" or "Coffee for 150 pax"'), fit_reason: str("Why they fit this event") }, required: ["company"] } }, ...runId }, required: ["event_id", "sponsors"] },
+    run: (a, u) => traced(u, a, "Save sponsors from web search", "save_sponsors", async () => { const r = await saveSponsors(String(a.event_id), (a.sponsors as SponsorInput[]) ?? []); return { saved: r.length, sponsors: r.map((s) => ({ sponsor_id: s.id, company: s.company })) }; }),
+  },
+  {
+    name: "list_sponsors",
+    description: "Sponsors on an event with their outreach status (found → contacted → opened → replied → accepted | declined), offers, and funnel totals.",
+    inputSchema: { type: "object", properties: { ...ev }, required: ["event_id"] },
+    run: async (a) => {
+      const eventId = String(a.event_id);
+      const rows = await query<Sponsor>("SELECT * FROM sponsors WHERE event_id = $1 ORDER BY created_at", [eventId]);
+      const funnel = Object.fromEntries(["found", "contacted", "opened", "replied", "accepted", "declined"].map((s) => [s, rows.filter((r) => r.status === s).length]));
+      const accepted = rows.filter((r) => r.status === "accepted");
+      return {
+        page: `${appUrl()}/events/${eventId}/sponsors`,
+        funnel,
+        confirmed_cash: accepted.filter((r) => r.offer_type !== "in_kind").reduce((n, r) => n + (r.offer_amount ?? 0), 0),
+        in_kind: accepted.filter((r) => r.offer_type === "in_kind").length,
+        sponsors: rows.map((r) => ({ sponsor_id: r.id, company: r.company, industry: r.industry, contact_email: r.contact_email, ask: r.ask, status: r.status, offer: r.status === "accepted" ? offerLabel(r) : null, notes: r.notes })),
+      };
+    },
+  },
+  {
+    name: "send_sponsor_outreach",
+    description: "Email the sponsorship invitation with the event proposal (PDF) attached to every 'found' sponsor, or only sponsor_ids. Role-gated: committee members' emails are queued for Programmes Director approval.",
+    inputSchema: { type: "object", properties: { ...ev, sponsor_ids: { type: "array", items: { type: "string" }, description: "Optional spn_... ids; default all not yet contacted" }, ...runId }, required: ["event_id"] },
+    run: (a, u) => traced(u, a, "Send sponsor outreach", "send_sponsor_outreach (outlook)", () => outreachSponsors(u, String(a.event_id), Array.isArray(a.sponsor_ids) ? (a.sponsor_ids as string[]) : null, (a.run_id as string) ?? null)),
+  },
+  {
+    name: "record_sponsor_reply",
+    description: "Record a sponsor's reply: status replied | accepted | declined (or opened). For accepted give offer_type cash (with offer_amount in RM) or in_kind (with offer_note, e.g. 'Coffee and pastries for 150 pax').",
+    inputSchema: { type: "object", properties: { ...ev, sponsor_id: str("spn_..."), status: { type: "string", enum: ["opened", "replied", "accepted", "declined"] }, offer_type: { type: "string", enum: ["cash", "in_kind"] }, offer_amount: { type: "number", description: "RM value" }, offer_note: str("What they offer / conditions"), notes: str("Short note, e.g. why they declined") }, required: ["event_id", "sponsor_id", "status"] },
+    run: async (a, u) => {
+      const sp = await one<Sponsor>("SELECT * FROM sponsors WHERE id = $1 AND event_id = $2", [String(a.sponsor_id), String(a.event_id)]);
+      if (!sp) throw new Error("Sponsor not found on this event");
+      const r = await recordSponsor(sp.id, { status: a.status as Decision["status"], offer_type: (a.offer_type as Decision["offer_type"]) ?? null, offer_amount: a.offer_amount == null ? null : Number(a.offer_amount), offer_note: (a.offer_note as string) ?? null, notes: a.notes as string | undefined });
+      await audit(u, `sponsor.${r.status}`, { company: r.company, offer: r.status === "accepted" ? offerLabel(r) : null, via: "workbuddy" }, { eventId: r.event_id });
+      return { sponsor_id: r.id, company: r.company, status: r.status, offer: r.status === "accepted" ? offerLabel(r) : null };
+    },
+  },
+  {
+    name: "schedule_meeting",
+    description: "Book a team meeting for an event (kick-off, weekly sync, vendor check-in, day-before run-through, debrief). Times are Malaysia time. Attendees default to the whole event team. Shows on /events/<event_id>/meetings with an .ics link.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...ev,
+        title: str('e.g. "Weekly sync"'),
+        starts_at: str('Start, ISO 8601, e.g. "2026-10-13T20:00" (Malaysia time when no offset is given)'),
+        duration_min: { type: "number", description: "Length in minutes (default 60, or the template's)" },
+        location: str("Room or place"),
+        meeting_url: str("Video call link"),
+        attendees: { type: "array", items: { type: "string" }, description: "Names or emails; default the whole event team" },
+        agenda: { type: "array", items: { type: "string" }, description: "Agenda lines" },
+        template: { type: "string", enum: ["kickoff", "weekly", "vendor", "runthrough", "debrief"], description: "Prefill title, length and agenda" },
+        ...runId,
+      },
+      required: ["event_id", "starts_at"],
+    },
+    run: (a, u) =>
+      traced(u, a, "Schedule meeting", "schedule_meeting", async () => {
+        const M = await import("../meetings");
+        const eventId = String(a.event_id);
+        const tpl = M.templateFor(a.template as string | undefined);
+        const raw = String(a.starts_at ?? "");
+        const hasZone = /(Z|[+-]\d{2}:?\d{2})$/i.test(raw);
+        const at = hasZone ? M.klParts(new Date(raw).toISOString()) : { date: raw.slice(0, 10), time: raw.slice(11, 16) || "20:00" };
+        const names = Array.isArray(a.attendees) ? (a.attendees as string[]).filter(Boolean) : [];
+        const people = names.length ? await resolvePeople(u.society_id ?? "", names) : { ids: (await listMembers(eventId)).map((m) => m.user_id), unknown: [] as string[] };
+        const agenda = Array.isArray(a.agenda) && a.agenda.length ? (a.agenda as string[]) : tpl?.agenda ?? [];
+        const m = await M.createMeetingRecord(u, eventId, {
+          title: String(a.title ?? tpl?.title ?? "Team meeting"),
+          date: at.date,
+          time: at.time,
+          duration_min: Number(a.duration_min) || tpl?.duration || 60,
+          location: (a.location as string) ?? null,
+          meeting_url: (a.meeting_url as string) ?? null,
+          attendees: people.ids,
+          agenda,
+        });
+        return { meeting_id: m.id, title: m.title, when: M.fmtWhen(m.starts_at, m.duration_min), attendees: m.attendees.length, agenda: m.agenda.map((x) => x.item), not_found: people.unknown, link: `${appUrl()}/events/${eventId}/meetings#${m.id}`, ics_url: `${appUrl()}/api/meetings/${m.id}/ics` };
+      }),
+  },
+  {
+    name: "list_meetings",
+    description: "An event's meetings with time, place, attendees, whether minutes are written and how many action items are still open.",
+    inputSchema: { type: "object", properties: { ...ev, when: { type: "string", enum: ["upcoming", "past", "all"], description: "Default all" } }, required: ["event_id"] },
+    run: async (a) => {
+      const M = await import("../meetings");
+      const eventId = String(a.event_id);
+      const [all, names] = await Promise.all([M.listMeetings(eventId), M.teamNames(eventId)]);
+      const now = M.demoNow();
+      const pick = all.filter((m) => (a.when === "upcoming" ? !M.isPast(m, now) : a.when === "past" ? M.isPast(m, now) : true));
+      return pick.map((m) => ({
+        meeting_id: m.id,
+        title: m.title,
+        when: M.fmtWhen(m.starts_at, m.duration_min),
+        status: m.status === "scheduled" && M.isPast(m, now) ? "needs_minutes" : m.status,
+        where: m.location ?? m.meeting_url,
+        attendees: m.attendees.map((x) => names[x] ?? x),
+        minutes_done: M.hasMinutes(m),
+        decisions: m.decisions.length,
+        open_action_items: m.action_items.filter((x) => !x.done).length,
+        link: `${appUrl()}/events/${eventId}/meetings#${m.id}`,
+      }));
+    },
+  },
+  {
+    name: "record_minutes",
+    description: "Write up a meeting: minutes (use '## Heading' and '- bullet' lines), decisions, action items with owners and due dates, and who attended. Appends to what is there and marks the meeting done. create_tasks turns each new action item into a task on the event.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        meeting_id: str("mtg_... from list_meetings or schedule_meeting"),
+        minutes: str("Minutes text"),
+        decisions: { type: "array", items: { type: "string" } },
+        action_items: { type: "array", items: { type: "object", properties: { text: str("What to do"), owner: str("Name or email on the team"), due_date: str("YYYY-MM-DD") }, required: ["text"] } },
+        attended: { type: "array", items: { type: "string" }, description: "Names or emails of who came" },
+        create_tasks: { type: "boolean", description: "Also add each new action item to the event's tasks" },
+        mark_done: { type: "boolean", description: "Default true" },
+        ...runId,
+      },
+      required: ["meeting_id"],
+    },
+    run: async (a, u) => {
+      const M = await import("../meetings");
+      const m = await M.getMeeting(String(a.meeting_id));
+      if (!m) throw new Error("Meeting not found");
+      await assertMember(u, m.event_id);
+      return traced(u, { ...a, event_id: m.event_id }, "Record meeting minutes", "record_minutes", async () => {
+        const items = Array.isArray(a.action_items) ? (a.action_items as { text: string; owner?: string; due_date?: string }[]) : [];
+        const unknown: string[] = [];
+        const actions = [];
+        for (const it of items) {
+          const who = it.owner ? await resolvePeople(u.society_id ?? "", [it.owner]) : { ids: [], unknown: [] };
+          unknown.push(...who.unknown);
+          actions.push({ text: String(it.text ?? ""), owner_id: who.ids[0] ?? null, due_date: /^\d{4}-\d{2}-\d{2}$/.test(String(it.due_date ?? "")) ? String(it.due_date) : null });
+        }
+        const came = Array.isArray(a.attended) && a.attended.length ? await resolvePeople(u.society_id ?? "", a.attended as string[]) : null;
+        if (came) unknown.push(...came.unknown);
+        const r = await M.recordMinutes(u, m.id, {
+          minutes: typeof a.minutes === "string" ? a.minutes : undefined,
+          decisions: Array.isArray(a.decisions) ? (a.decisions as string[]) : undefined,
+          action_items: actions,
+          attended: came?.ids,
+          create_tasks: Boolean(a.create_tasks),
+          mark_done: a.mark_done !== false,
+        });
+        const names = await M.teamNames(m.event_id);
+        return {
+          meeting_id: m.id,
+          status: r.meeting?.status,
+          decisions: r.meeting?.decisions,
+          action_items: r.meeting?.action_items.map((x) => ({ text: x.text, owner: x.owner_id ? names[x.owner_id] ?? x.owner_id : null, due_date: x.due_date, task_id: x.task_id ?? null })),
+          tasks_created: r.task_ids.length,
+          not_found: unknown,
+          link: `${appUrl()}/events/${m.event_id}/meetings#${m.id}`,
+          minutes_md: `${appUrl()}/api/meetings/${m.id}/minutes`,
+          minutes_pdf: `${appUrl()}/api/meetings/${m.id}/minutes?format=pdf`,
+        };
+      });
     },
   },
   {

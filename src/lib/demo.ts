@@ -90,6 +90,8 @@ async function bootstrap() {
     if (!row) continue;
     await query("UPDATE runsheet_items SET activity = replace(activity, $2, $3) WHERE event_id = $1", [ev.id, row.name, sp.name]);
     await query("UPDATE creatives SET caption = replace(caption, $2, $3) WHERE event_id = $1", [ev.id, row.name, sp.name]);
+    await query("UPDATE approval_requests SET title = replace(title, $2, $3) WHERE event_id = $1", [ev.id, row.name, sp.name]);
+    await query("UPDATE emails SET subject = replace(subject, $2, $3), body = replace(body, $2, $3) WHERE event_id = $1", [ev.id, row.name, sp.name]);
     await update("speakers", row.id, { name: sp.name, headline: sp.headline, email: sp.email, phone: sp.phone, photo_url: sp.photo_url, bio: sp.bio, talk_title: sp.talk_title, source: "workbuddy", source_url: null, fit_reason: sp.bio });
   }
 
