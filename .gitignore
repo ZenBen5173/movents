@@ -1,0 +1,14 @@
+node_modules
+.next
+.data
+.env
+.env.local
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+
+# local tooling and outputs
+.claude/
+.playwright-mcp/
+pitch-video/out/*
+!pitch-video/out/movents-pitch-90s-small.mp4

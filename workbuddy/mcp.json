@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "movents": {
+      "type": "streamable-http",
+      "url": "https://YOUR-DEPLOYMENT.vercel.app/api/mcp",
+      "headers": { "Authorization": "Bearer YOUR_MOVENTS_API_KEY" }
+    }
+  }
+}

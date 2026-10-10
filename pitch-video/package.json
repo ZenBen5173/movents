@@ -1,0 +1,24 @@
+{
+  "name": "movents-pitch-video",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Movents 2-minute motion pitch video (Remotion)",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts MoventsPitch out/movents-pitch.mp4 --codec=h264",
+    "still": "remotion still src/index.ts MoventsPitch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.534",
+    "@remotion/google-fonts": "4.0.534",
+    "@remotion/transitions": "4.0.534",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.534"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}
