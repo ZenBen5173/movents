@@ -8,7 +8,7 @@ import { one, query } from "../db";
 import { decideApproval } from "../actions";
 import { runScheduler } from "../scheduler";
 import { loadBundle, budgetTotals } from "../docs/builders";
-import { generateKit, imageHref, setImage } from "../marketing";
+import { generateKit, imageHref, needsImage, refreshPrompts, setImage } from "../marketing";
 import { update as updateRow } from "../db";
 import type { AgentRun, Creative, StepStatus, User } from "../types";
 import { addMembers, assertMember, listMembers, removeMember, resolvePeople, visibleSql } from "../members";
@@ -417,7 +417,7 @@ const ALL_TOOLS: Tool[] = [
   { name: "sync_rsvps", description: "Pull RSVPs from Luma or Meetup into the registration list.", inputSchema: { type: "object", properties: { ...ev, platform: { type: "string", enum: ["luma", "meetup"] }, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Sync RSVPs", "sync_rsvps", () => T.syncRsvps(String(a.event_id), (a.platform as "luma" | "meetup") ?? "luma")) },
   {
     name: "generate_marketing_kit",
-    description: "Create the event's marketing kit: campus poster (4:5), Instagram post (1:1) and story (9:16), LinkedIn image, channel-specific captions and hashtags, plus a 15-second Reels/TikTok storyboard. Each creative includes an image_prompt ready for Nano Banana. Returns creative ids, generate the images/video with your Nano Banana integration and attach them with attach_creative_media.",
+    description: "Create the event's marketing kit: campus poster (4:5), Instagram post (1:1) and story (9:16), LinkedIn image, channel-specific captions and hashtags, plus a 15-second Reels/TikTok storyboard. Each creative includes an image_prompt. Then, for each image creative, generate a real AI image with your image generation tool (ImageGen, or miora_text_to_image) from that image_prompt and attach it with attach_creative_media. Never draw posters with code (Python/PIL, HTML, SVG, canvas or screenshots): they look empty and are rejected.",
     inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] },
     run: (a, u) =>
       traced(u, a, "Create marketing kit", "generate_marketing_kit", async () => {
@@ -427,7 +427,7 @@ const ALL_TOOLS: Tool[] = [
   },
   {
     name: "attach_creative_media",
-    description: "Attach an image (or video) WorkBuddy generated with Nano Banana to a creative. Pass file_path (the generated file on this computer), media_url (https), or media_base64 + mime_type (e.g. image/png).",
+    description: "Attach a real AI-generated image (or video) to a creative. Generate it first with your image generation tool (ImageGen, or miora_text_to_image, whose resultFiles[].localPath you pass as file_path). Pass file_path, media_url (https), or media_base64 + mime_type. Images drawn with code (PIL, HTML, SVG, canvas) are rejected.",
     inputSchema: { type: "object", properties: { creative_id: str("crv_..."), file_path: str("Absolute path of the generated image or video file on this computer"), media_url: str("https URL of the generated image/video"), media_base64: str("Base64 data, without the data: prefix"), mime_type: str("e.g. image/png, image/jpeg, video/mp4"), ...runId }, required: ["creative_id"] },
     run: (a, u) =>
       traced(u, a, "Attach Nano Banana media", "attach_creative_media", async () => {
@@ -440,6 +440,9 @@ const ALL_TOOLS: Tool[] = [
           media = `data:${mime};base64,${(await fs.readFile(path)).toString("base64")}`;
         }
         if (!media) throw new Error("file_path, media_url or media_base64 is required");
+        // Code-drawn posters (flat shapes + text) compress to a few dozen KB; real AI art does not.
+        const b64 = media.match(/^data:image\/[\w+.-]+;base64,(.*)$/)?.[1];
+        if (b64 && b64.length * 0.75 < 60_000) throw new Error("This image looks drawn with code, not AI-generated (too small and flat). Generate it with your image generation tool (ImageGen or miora_text_to_image) from the creative's image_prompt, then attach that file.");
         const c = await setImage(String(a.creative_id), media, "workbuddy");
         return { creative_id: c?.id, attached: true, preview: c ? `${appUrl()}${imageHref(c)}` : null };
       }),
@@ -455,7 +458,7 @@ const ALL_TOOLS: Tool[] = [
     },
   },
   { name: "request_social_approval", description: "Send the poster and social posts for approval (President/VP). Approved creatives satisfy the SOP publicity-approval step.", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Request poster & social approval", "request_social_approval", () => T.requestSocialApproval(u, String(a.event_id), (a.run_id as string) ?? null)) },
-  { name: "list_creatives", description: "List the event's marketing creatives with status, preview links and, for each, the image_prompt and size to generate with Nano Banana (needs_image = still the placeholder template).", inputSchema: { type: "object", properties: { ...ev }, required: ["event_id"] }, run: async (a) => (await query<Creative>("SELECT * FROM creatives WHERE event_id = $1 ORDER BY created_at", [String(a.event_id)])).map((c) => ({ creative_id: c.id, kind: c.kind, status: c.status, image_source: c.image_source, needs_image: c.image_source === "template", image_prompt: c.image_prompt, width: c.width, height: c.height, preview: `${appUrl()}${imageHref(c)}` })) },
+  { name: "list_creatives", description: "List the event's marketing creatives with status, preview links, image_prompt and size. needs_image = still a placeholder or a code-drawn image: generate a real AI image with ImageGen (or miora_text_to_image) from image_prompt, then attach_creative_media.", inputSchema: { type: "object", properties: { ...ev }, required: ["event_id"] }, run: async (a) => (await refreshPrompts(String(a.event_id))).map((c) => ({ creative_id: c.id, kind: c.kind, status: c.status, image_source: c.image_source, needs_image: needsImage(c), image_prompt: c.image_prompt, width: c.width, height: c.height, preview: `${appUrl()}${imageHref(c)}` })) },
   { name: "list_approvals", description: "List approval requests (default: pending).", inputSchema: { type: "object", properties: { status: str("pending | approved | executed | rejected | awaiting_faculty | all") } }, run: async (a) => query(`SELECT id, event_id, action_type, title, approver_role, approver_department, status, result, created_at FROM approval_requests ${a.status === "all" ? "" : "WHERE status = $1"} ORDER BY created_at DESC LIMIT 100`, a.status === "all" ? [] : [String(a.status ?? "pending")]) },
   { name: "decide_approval", description: "Approve or reject a pending request. Only works if the API key's user has the authority (role check enforced).", inputSchema: { type: "object", properties: { approval_id: str("apr_..."), decision: { type: "string", enum: ["approve", "reject"] }, note: str("Optional note") }, required: ["approval_id", "decision"] }, run: (a, u) => decideApproval(u, String(a.approval_id), a.decision as "approve" | "reject", a.note as string | undefined) },
   { name: "run_scheduler", description: "Run the daily automations now: speaker follow-ups, vendor reminders (7 days before), attendee reminder cadence, 90% spend alerts, feedback surveys.", inputSchema: { type: "object", properties: {} }, run: () => runScheduler() },

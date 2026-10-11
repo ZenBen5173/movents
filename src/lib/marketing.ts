@@ -63,13 +63,35 @@ export function copyFor(kind: Creative["kind"], c: Ctx) {
   }
 }
 
-/** Prompt for Nano Banana (image) or a video model — brand-consistent, with the exact text to render. */
+/** A striking hero scene for the event's topic, so the AI image has a real subject, not just text. */
+function sceneFor(c: Ctx) {
+  const t = `${c.ev.title} ${c.ev.topic ?? ""}`.toLowerCase();
+  const scenes: [RegExp, string][] = [
+    [/robot/, "a sleek humanoid robot and a robotic arm on a glowing stage, sparks of light, students silhouetted in the foreground"],
+    [/hack|code|coding|dev|game/, "a crowd of students coding on laptops late at night, screens glowing with neon code, energy drinks and sticky notes, light trails overhead"],
+    [/cloud|server|devops/, "a floating city of glowing server racks among soft clouds at sunrise, data streams of light connecting them"],
+    [/\bai\b|artificial|machine learning|ml\b|data/, "a glowing translucent neural-network brain made of light hovering above an auditorium stage, students looking up in awe"],
+    [/career|job|intern|recruit/, "confident students in smart casual clothes walking into a bright modern expo hall with company booths, city skyline through tall windows"],
+    [/cyber|security/, "a glowing digital shield over a dark city grid, cyan light, a hooded figure dissolving into code"],
+    [/music|concert|band|night|cultural|festival|dance/, "a vibrant crowd under colourful stage lights and confetti, hands in the air, festival atmosphere"],
+    [/sport|run|futsal|tournament/, "dynamic athletes mid-action under stadium lights, motion blur and dust"],
+  ];
+  return scenes.find(([re]) => re.test(t))?.[1] ?? "an excited crowd of university students in a modern auditorium, a speaker on a lit stage, warm spotlight beams";
+}
+
+/** Prompt for an AI image model (Nano Banana / WorkBuddy ImageGen) or a video model. Real art direction, exact text. */
 export function promptFor(kind: Creative["kind"], c: Ctx, w: number, h: number) {
-  const base = `Event: "${c.ev.title}". Organiser: ${c.society} (${c.uni}). Date: ${fmtDate(c.ev.date)}, ${c.ev.start_time} to ${c.ev.end_time}. Venue: ${c.venue?.name ?? c.uni}. Topic: ${c.ev.topic ?? c.ev.title}.`;
-  const style = "Playful event-pass style on a warm off-white (#f7f5ef) background: tomato orange (#ff5a36), electric blue (#3d6cf5) and sunny yellow (#ffd84d) accents, bold black grotesk headline, monospace uppercase labels, an \"admit one\" ticket with a dashed tear line and barcode, a little bunting across the top. Flat, clean, generous margins, no gradients, no logos of real companies. Render all text exactly and legibly.";
-  if (kind === "video") return `Generate a 15-second vertical (9:16) teaser video. ${base} Follow this storyboard: ${copyFor("video", c).caption.replace(/\n/g, " ")} ${style}`;
-  const what = { poster: "a printable campus event poster", ig_post: "a square Instagram feed post", ig_story: "a vertical Instagram story with space at the bottom for a link sticker", linkedin: "a professional LinkedIn post banner" }[kind];
-  return `Create ${what}, ${w}x${h}px. ${base} Text to include: headline "${c.ev.title}", line "${fmtDate(c.ev.date)} · ${c.venue?.name ?? c.uni}", line "Free entry · Register now". ${style}`;
+  const where = c.venue?.name ?? c.uni;
+  const look = `Style: high-end AI illustrated event key art, cinematic 3D render with rich depth, dramatic volumetric lighting, bold vibrant colours (electric blue, tomato orange and sunny yellow highlights), polished like a festival or tech-conference poster. Not flat, not a template, no plain background, no barcode, no ticket stub, no logos of real companies.`;
+  const text = `Render only this text, spelled exactly, in a bold modern sans-serif with strong contrast: big headline "${c.ev.title}"; smaller line "${fmtDate(c.ev.date)} · ${where}"; small line "Free entry · Register now"; tiny line "${c.society}". No other words, no colour codes, no labels.`;
+  if (kind === "video") return `A 15-second vertical (9:16) teaser video for "${c.ev.title}" by ${c.society} at ${c.uni}. Hero scene: ${sceneFor(c)}. Follow this storyboard: ${copyFor("video", c).caption.replace(/\n/g, " ")} ${look}`;
+  const frame = {
+    poster: `A ${w}x${h} portrait campus event poster. The hero scene fills the top two thirds; the text sits in the lower third over a darkened area.`,
+    ig_post: `A ${w}x${h} square Instagram post. The hero scene fills the frame; the headline sits on a clear area at the top or bottom.`,
+    ig_story: `A ${w}x${h} vertical Instagram story. Hero scene in the middle, headline near the top, keep the bottom 15% calm for a link sticker.`,
+    linkedin: `A ${w}x${h} landscape LinkedIn banner. Hero scene on the right half, text on a clean area on the left half.`,
+  }[kind];
+  return `${frame} Hero scene: ${sceneFor(c)}. ${look} ${text}`;
 }
 
 export async function generateKit(eventId: string, opts: { withImages?: boolean } = {}) {
@@ -98,6 +120,19 @@ export async function generateKit(eventId: string, opts: { withImages?: boolean 
     }
   }
   return { creatives: out, generated, mode: nanoBananaEnabled() ? "nano-banana" : "template", errors };
+}
+
+/** Re-write every creative's image_prompt with the current art direction (keeps captions as edited). */
+export async function refreshPrompts(eventId: string) {
+  const c = await context(eventId);
+  const rows = await query<Creative>("SELECT * FROM creatives WHERE event_id = $1 ORDER BY created_at", [eventId]);
+  return Promise.all(rows.map(async (r) => (await update<Creative>("creatives", r.id, { image_prompt: promptFor(r.kind, c, r.width, r.height) })) ?? r));
+}
+
+/** Still a placeholder, or an image too small/flat to be real AI art (e.g. drawn with code). */
+export function needsImage(c: Pick<Creative, "kind" | "image_source" | "image_data">) {
+  if (c.kind === "video") return c.image_source === "template";
+  return c.image_source === "template" || Boolean(c.image_data && c.image_data.length * 0.75 < 60_000);
 }
 
 export async function setImage(creativeId: string, image: string, source: Creative["image_source"]) {

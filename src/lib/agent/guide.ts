@@ -13,11 +13,12 @@ export const MCP_INSTRUCTIONS = `You are planning campus society events with Mov
    draft_budget then validate_budget (fix and re-validate if anything fails);
    generate_risks, generate_ops_pack, validate_proposal;
    search the web for 5 likely sponsors and save_sponsors;
-   generate_marketing_kit, then for each creative (skip video) generate the image with your image generation (Nano Banana) from its image_prompt at its size and attach_creative_media with file_path; then request_social_approval;
+   generate_marketing_kit, then for each creative (skip video) make a REAL AI image: call your image generation tool (ImageGen, or miora_text_to_image) with its image_prompt at its size, then attach_creative_media with the generated file_path; then request_social_approval;
    schedule_meeting for a kick-off with the team;
    send_speaker_outreach, request_vendor_quotes, send_sponsor_outreach, request_budget_approval, submit_to_faculty, push_calendar, publish_event;
    get_outputs, finish_run.
    Pass run_id to every call so the Movents page shows you building the event live.
 3. Changing an existing event: call list_my_events to find it by name, then only the tools needed (e.g. new posters: list_creatives, generate images for those with needs_image, attach_creative_media; more sponsors: search, save_sponsors; a meeting: schedule_meeting). Use start_run with the request so it shows live too.
-4. Blocked actions return status "blocked": that is the approval gate working. Tell the user who must approve; never retry around it.
-5. Finish with a short summary: venue, budget vs cap, what is waiting for approval and who approves it, and the event link.`;
+4. Posters and social images must come from an AI image model. NEVER draw them with code (Python/PIL, HTML, SVG, canvas, screenshots): Movents rejects those. If image generation is unavailable, say so and skip the images instead of faking them.
+5. Blocked actions return status "blocked": that is the approval gate working. Tell the user who must approve; never retry around it.
+6. Finish with a short summary: venue, budget vs cap, what is waiting for approval and who approves it, and the event link.`;

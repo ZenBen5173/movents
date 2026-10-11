@@ -25,7 +25,7 @@ Call `start_run` with the full brief (their words plus the answers) and pass its
 4. `draft_budget`, then `validate_budget`. If a check fails, fix it and validate again.
 5. `generate_risks`, `generate_ops_pack`, `validate_proposal`.
 6. Search the web for **5 likely sponsors**, and `save_sponsors`.
-7. `generate_marketing_kit`. For each creative it returns (skip the video), **generate the image with Nano Banana** (your image generation) from its `image_prompt` at its size, keeping the event text exact, then `attach_creative_media` with `file_path`. Then `request_social_approval`.
+7. `generate_marketing_kit`. For each creative it returns (skip the video), make a **real AI image** (see "Posters" below), then `attach_creative_media` with `file_path`. Then `request_social_approval`.
 8. `schedule_meeting`: a kick-off with the team in the next few days.
 9. `send_speaker_outreach`, `request_vendor_quotes`, `send_sponsor_outreach`, `request_budget_approval`, `submit_to_faculty`, `push_calendar`, `publish_event`.
 10. `get_outputs`, `finish_run`.
@@ -35,13 +35,20 @@ Run independent steps in parallel where you can. Never invent prices, people or 
 ## 3. Change part of an existing event
 
 Find it with `list_my_events` (match by name), `start_run` with the request, then only what's needed:
-- **Posters or social images:** `list_creatives`. For those with `needs_image`, generate with Nano Banana and `attach_creative_media` (`file_path`).
+- **Posters or social images:** `list_creatives`. For every one with `needs_image` (or all, if they ask to redo), make a real AI image (see "Posters" below) and `attach_creative_media` (`file_path`).
 - **More sponsors:** web search, `save_sponsors`, then `send_sponsor_outreach`. Use `record_sponsor_reply` when someone answers.
 - **Speakers or suppliers:** search, `save_speakers` / `save_supplier_quotes`, then `draft_budget` and `validate_budget`.
 - **Meetings:** `schedule_meeting`, then `record_minutes` after it.
 - **Team:** `event_team`.
 
 Finish with `finish_run`.
+
+## Posters (AI images only)
+
+- Use your **image generation tool**: `ImageGen`, or Miora `miora_text_to_image` (call `connect_cloud_service` first for its `tempKey`, then pass `resultFiles[].localPath` as `file_path`).
+- Send the creative's `image_prompt` as is, at its width x height. It already has the scene, style and exact text.
+- **Never draw a poster with code**: no Python/PIL, HTML, SVG, canvas or screenshots. They come out as a blank page with a title, and Movents rejects them.
+- If no image tool works, tell the user and skip the images. Don't fake them.
 
 ## 4. After the event
 
