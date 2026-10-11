@@ -76,7 +76,9 @@ export async function POST(req: Request) {
   return out ? NextResponse.json(out, { headers }) : new NextResponse(null, { status: 202, headers });
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  // MCP clients open a GET to listen for server events; we don't stream, so say so per spec.
+  if ((req.headers.get("accept") ?? "").includes("text/event-stream")) return new NextResponse(null, { status: 405, headers: { allow: "POST" } });
   return NextResponse.json({ name: "movents", transport: "streamable-http (POST JSON-RPC)", tools: TOOLS.map((t) => t.name) });
 }
 

@@ -9,6 +9,7 @@ import { EventTabs } from "@/components/app/event-tabs";
 import { currentUser } from "@/lib/session";
 import { isMember, listMembers } from "@/lib/members";
 import { EventTeam } from "@/components/app/event-team";
+import { LiveBuild } from "@/components/app/live-build";
 import { StageEmpty } from "@/components/ep/kit";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +65,10 @@ export default async function EventLayout({ children, params }: { children: Reac
         </dl>
       </div>
       <EventTabs id={id} />
-      <div className="mt-8">{children}</div>
+      <div className="relative mt-8">
+        <LiveBuild eventId={id} />
+        {children}
+      </div>
     </div>
   );
 }

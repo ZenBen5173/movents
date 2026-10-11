@@ -7,6 +7,7 @@ import { ArrowUpRight, Lock, Plus } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { Eyebrow, StageEmpty } from "@/components/ep/kit";
 import { Pill } from "./ui";
+import { LiveBoxOffice } from "./live-box-office";
 import { cn } from "@/lib/utils";
 import { SPRING } from "@/lib/motion";
 
@@ -214,6 +215,7 @@ export function Dashboard({ projects, tasks, today, firstName }: { projects: Das
               ))}
             </div>
           </div>
+          <LiveBoxOffice />
           {projects.length === 0 ? (
             <div className="mt-6"><StageEmpty title="No events yet" action={<Link href="/new" className="inline-flex h-10 items-center rounded-xl bg-ink px-4 text-sm text-white">New event</Link>} /></div>
           ) : (
