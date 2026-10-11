@@ -98,6 +98,29 @@ function describe(out: unknown): { status: StepStatus; summary?: string; validat
 
 const ALL_TOOLS: Tool[] = [
   {
+    name: "review_brief",
+    description: "Start here when the user wants to plan an event. Pass their words as they said them. Returns what was understood and the questions to ask (all at once) before planning. If questions is empty, go straight to planning.",
+    inputSchema: { type: "object", properties: { brief: str("The user's request in their own words") }, required: ["brief"] },
+    run: async (a, user) => {
+      const brief = String(a.brief);
+      const p = parsePrompt(brief, today());
+      const people = await query<{ name: string; department: string | null }>("SELECT name, department FROM users WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]);
+      const questions: string[] = [];
+      if (p.missing.includes("date")) questions.push("What date (and time) is the event?");
+      if (p.missing.includes("pax")) questions.push("Roughly how many people are you expecting?");
+      if (p.missing.includes("budget")) questions.push("What is the budget cap (in RM)?");
+      if (!p.team.length) questions.push(`Who is helping run it? (e.g. ${people.slice(0, 3).map((x) => x.name.split(" ")[0]).join(", ")})`);
+      if (p.title.toLowerCase().startsWith("event") || p.topic.toLowerCase() === "event") questions.push("What is the event about (topic and format, e.g. AI talk, hackathon, workshop)?");
+      return {
+        understood: { title: p.title, date: p.missing.includes("date") ? null : p.date, time: `${p.startTime} to ${p.endTime}`, pax: p.missing.includes("pax") ? null : p.pax, budget_rm: p.missing.includes("budget") ? null : p.budget, campus: p.university, team: p.team, preferred_suppliers: p.suppliers },
+        questions,
+        defaults_if_user_says_you_decide: { date: p.date, pax: p.pax, budget_rm: p.budget, time: `${p.startTime} to ${p.endTime}`, campus: "Sunway" },
+        optional_to_ask: p.suppliers.length ? [] : ["Any suppliers you want to use (e.g. a caterer)?"],
+        next: questions.length ? "Ask the user these questions in one message, then plan end to end." : "Everything needed is here. Plan end to end now (start_run first).",
+      };
+    },
+  },
+  {
     name: "list_society_members",
     description: "People in the caller's society (name, role, department, email). Use to pick an event team.",
     inputSchema: { type: "object", properties: {} },

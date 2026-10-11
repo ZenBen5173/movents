@@ -1,60 +1,54 @@
 ---
 name: movents
-description: Plan a university society event end to end the way the university's SOP requires, from one prompt — research speakers and suppliers, draft the proposal, budget and risk register, validate against the SOP, adapt, and send role-gated emails. Also writes the post-event report. Use whenever the user asks to plan, organise or report on a campus/club/society event.
+description: Plan, run and wrap up university club and society events with Movents. Use whenever someone wants to plan an event (talk, workshop, hackathon, career fair, cultural night, any campus or club event), change part of an existing event (posters, sponsors, speakers, budget, meetings), or write the post-event report. Works from normal conversation; the user never needs to name tools.
 ---
 
-# Movents campus event agent
+# Movents: campus event planning
 
-You are the agent. Movents (MCP server `movents`) is your toolset and system of record:
-it holds the university SOP, the society's roles, the approval queue, the audit log and the outputs.
+Movents (MCP server `movents`) is your toolset and the society's record: university SOP, roles and approvals, budget, tasks, sponsors, meetings and every output. People talk to you normally. Never ask them for tool names or ids.
+
+## 1. Get the brief (ask once)
+
+When someone wants to plan an event, call `review_brief` with their words.
+- If it returns `questions`, ask **all of them in one short, friendly message** and wait. Typical gaps: date, headcount, budget, who is helping, topic.
+- Ask only once. If they say "you decide" or skip something, use `defaults_if_user_says_you_decide`.
+- You may also ask the `optional_to_ask` items in the same message (e.g. a preferred caterer).
+- Then plan without stopping again.
+
+## 2. Plan it end to end
+
+Call `start_run` with the full brief (their words plus the answers) and pass its `run_id` to every call, so the Movents page shows you building the event live.
+
+1. `create_event` (team and preferred suppliers from the brief), `read_sop`, `plan_timeline`, `match_venue`, `check_lead_times`. If a lead time fails, tell the user the earliest compliant date at the end.
+2. Search the web for **3 real speakers** who fit, and `save_speakers` with source links.
+3. Search the web for **real supplier prices** (food, T-shirts, lanyards, card holders), and `save_supplier_quotes` with links. Include any supplier the user named.
+4. `draft_budget`, then `validate_budget`. If a check fails, fix it and validate again.
+5. `generate_risks`, `generate_ops_pack`, `validate_proposal`.
+6. Search the web for **5 likely sponsors**, and `save_sponsors`.
+7. `generate_marketing_kit`. For each creative it returns (skip the video), **generate the image with Nano Banana** (your image generation) from its `image_prompt` at its size, keeping the event text exact, then `attach_creative_media` with `file_path`. Then `request_social_approval`.
+8. `schedule_meeting`: a kick-off with the team in the next few days.
+9. `send_speaker_outreach`, `request_vendor_quotes`, `send_sponsor_outreach`, `request_budget_approval`, `submit_to_faculty`, `push_calendar`, `publish_event`.
+10. `get_outputs`, `finish_run`.
+
+Run independent steps in parallel where you can. Never invent prices, people or emails: research them.
+
+## 3. Change part of an existing event
+
+Find it with `list_my_events` (match by name), `start_run` with the request, then only what's needed:
+- **Posters or social images:** `list_creatives`. For those with `needs_image`, generate with Nano Banana and `attach_creative_media` (`file_path`).
+- **More sponsors:** web search, `save_sponsors`, then `send_sponsor_outreach`. Use `record_sponsor_reply` when someone answers.
+- **Speakers or suppliers:** search, `save_speakers` / `save_supplier_quotes`, then `draft_budget` and `validate_budget`.
+- **Meetings:** `schedule_meeting`, then `record_minutes` after it.
+- **Team:** `event_team`.
+
+Finish with `finish_run`.
+
+## 4. After the event
+
+"Write the report for …": call `generate_post_event_report` with their words, then share the report link.
 
 ## Always
 
-1. Call `start_run` with the user's exact prompt. Keep the returned `run_id` and pass it to every later call —
-   that is what makes each step appear in the live trace judges watch (`trace_url`).
-2. Never invent prices, speakers or emails. Search the web yourself, then save what you found with `save_speakers` and `save_supplier_quotes` (always with source URLs).
-3. Outbound actions are role-gated. If a tool returns `status: "blocked"`, do **not** retry or work around it.
-   Tell the user who must approve (it is in `reason`) and that it is waiting in the approval queue.
-4. Finish with `finish_run` and give the user the links from `get_outputs`.
-5. Events are private to their team. Ask who is working on it if the user did not say; check names with `list_society_members`.
-   The caller becomes the lead; pass the rest as `team` to `create_event`. Change it later with `event_team`.
-   A tool that says "not on this event's team" means the API key's user must be added first.
-
-## Plan an event ("Plan a 150-pax AI talk at Sunway on 15 Nov, budget RM3,000, with Priya and Jason.")
-
-Gather first: the idea, date, pax, budget, who is helping, and any suppliers they want. Ask once for anything missing.
-Pass people as `team` and suppliers as `suppliers` (to `create_event`). A named supplier is used whenever a saved quote matches its name, so search the web for its price and `save_supplier_quotes` before `draft_budget`.
-
-Run these in order, each with `run_id`:
-
-| Step | Tool | What to check |
-|---|---|---|
-| Plan | `create_event` (with `team`) → `read_sop` → `plan_timeline` | SOP sections, lead times, lessons learned |
-| Venue | `match_venue` | clash with other bookings → it moves to the next room |
-| Validate | `check_lead_times` | if any check fails: tell the user the earliest compliant date |
-| Research | your own web search → `save_speakers`, `save_supplier_quotes` | 3 speakers; 2+ quotes per category (food, tshirt, lanyard, cardholder), with links |
-| Draft + adapt | `draft_budget` → `validate_budget` | if over cap the tool already adapted (cheaper vendor, cuts); if `shortfall > 0`, say so |
-| Draft | `generate_risks`, `generate_ops_pack`, `validate_proposal` | every SOP section present |
-| Marketing | `generate_marketing_kit` → for each creative, generate the image with **Nano Banana** from its `image_prompt` (and the teaser video from the video prompt) → `attach_creative_media` → optionally polish captions with `update_creative_copy` → `request_social_approval` | images match the size given; text rendered exactly |
-| Act (gated) | `send_speaker_outreach`, `request_vendor_quotes`, `request_budget_approval`, `submit_to_faculty`, `push_calendar`, `publish_event` | blocked = waiting for approval |
-| Report | `get_outputs`, `finish_run` | list every link |
-
-Always run the steps yourself, one tool at a time, with your own web search for speakers, suppliers and sponsors. Do not hand the whole plan to one call.
-
-Then, in WorkBuddy, you may also produce files the user asks for (e.g. a promo poster brief or a slide deck)
-from the outputs, and record each with `log_step` (pass `output_url` if you saved it somewhere).
-
-## Post-event report ("Generate the post-event report for the AI talk.")
-
-Call `generate_post_event_report` with the prompt (it finds the event, syncs RSVPs/check-ins, budget actuals and
-feedback, writes the PDF/Word report and feeds lessons back into the SOP knowledge base). Share `report_pdf`.
-
-## Other
-
-- `list_approvals`, `decide_approval` — only works if the API key's user may decide (President/VP, or the right Director).
-- `run_scheduler` — speaker follow-ups, vendor reminders, attendee reminders, 90% spend alerts.
-- `sync_rsvps` — pull Luma/Meetup RSVPs.
-- `list_my_events`: events the user is on. `event_team`: show, add or remove people.
-- `list_event_emails`: the event's mail (what was sent to speakers, suppliers, faculty, attendees).
-- Meetings: `schedule_meeting` (Malaysia time; `template` kickoff | weekly | vendor | runthrough | debrief prefills the agenda; attendees default to the team), `list_meetings` (shows which need minutes), `record_minutes` (minutes, decisions, action items with owner names; `create_tasks: true` adds them to the event's tasks; marks the meeting done).
-- Sponsors: web-search Malaysian companies that fit, then `save_sponsors`; `send_sponsor_outreach` emails them with the proposal PDF attached (role-gated); `record_sponsor_reply` logs replies and offers; `list_sponsors` shows the funnel.
+- Blocked actions (`status: "blocked"`) are the approval gate working. Tell the user who must approve; never work around it.
+- End with a short summary: venue, budget against the cap, what's waiting for approval and who approves it, and the event link.
+- Other tools: `list_approvals`, `decide_approval` (only if the user may decide), `sync_rsvps`, `list_event_emails`, `list_meetings`, `list_sponsors`, `get_event`.

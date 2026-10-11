@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { one } from "@/lib/db";
 import { currentUser } from "@/lib/session";
 import { TOOLS, findTool } from "@/lib/agent/registry";
+import { MCP_INSTRUCTIONS } from "@/lib/agent/guide";
 import type { User } from "@/lib/types";
 
 export const maxDuration = 300;
@@ -33,8 +34,7 @@ async function handleOne(msg: RpcReq, user: User | null) {
         protocolVersion: (msg.params?.protocolVersion as string) ?? PROTOCOL,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "movents", title: "Movents, campus event agent tools", version: "1.0.0" },
-        instructions:
-          "Call start_run with the user's prompt, then call tools with run_id so each step shows in the Movents trace. For a one-shot demo call plan_event_end_to_end. Outbound actions are role-gated; blocked ones return status 'blocked' with an approval id.",
+        instructions: MCP_INSTRUCTIONS,
       });
     case "ping":
       return reply({});
