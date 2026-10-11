@@ -17,13 +17,13 @@ it holds the university SOP, the society's roles, the approval queue, the audit 
    Tell the user who must approve (it is in `reason`) and that it is waiting in the approval queue.
 4. Finish with `finish_run` and give the user the links from `get_outputs`.
 5. Events are private to their team. Ask who is working on it if the user did not say; check names with `list_society_members`.
-   The caller becomes the lead; pass the rest as `team` to `create_event` (or `plan_event_end_to_end`). Change it later with `event_team`.
+   The caller becomes the lead; pass the rest as `team` to `create_event`. Change it later with `event_team`.
    A tool that says "not on this event's team" means the API key's user must be added first.
 
 ## Plan an event ("Plan a 150-pax AI talk at Sunway on 15 Nov, budget RM3,000, with Priya and Jason.")
 
 Gather first: the idea, date, pax, budget, who is helping, and any suppliers they want. Ask once for anything missing.
-Pass people as `team` and suppliers as `suppliers` (to `create_event` or `plan_event_end_to_end`). A named supplier is used whenever a saved quote matches its name, so search the web for its price and `save_supplier_quotes` before `draft_budget`.
+Pass people as `team` and suppliers as `suppliers` (to `create_event`). A named supplier is used whenever a saved quote matches its name, so search the web for its price and `save_supplier_quotes` before `draft_budget`.
 
 Run these in order, each with `run_id`:
 
@@ -39,7 +39,7 @@ Run these in order, each with `run_id`:
 | Act (gated) | `send_speaker_outreach`, `request_vendor_quotes`, `request_budget_approval`, `submit_to_faculty`, `push_calendar`, `publish_event` | blocked = waiting for approval |
 | Report | `get_outputs`, `finish_run` | list every link |
 
-One-shot alternative: `plan_event_end_to_end` runs the whole pipeline in one call.
+Always run the steps yourself, one tool at a time, with your own web search for speakers, suppliers and sponsors. Do not hand the whole plan to one call.
 
 Then, in WorkBuddy, you may also produce files the user asks for (e.g. a promo poster brief or a slide deck)
 from the outputs, and record each with `log_step` (pass `output_url` if you saved it somewhere).

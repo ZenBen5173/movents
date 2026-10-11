@@ -96,7 +96,7 @@ function describe(out: unknown): { status: StepStatus; summary?: string; validat
   return { status: "ok", summary: String(out) };
 }
 
-export const TOOLS: Tool[] = [
+const ALL_TOOLS: Tool[] = [
   {
     name: "list_society_members",
     description: "People in the caller's society (name, role, department, email). Use to pick an event team.",
@@ -454,6 +454,13 @@ export const TOOLS: Tool[] = [
     },
   },
 ];
+
+/**
+ * What WorkBuddy sees. The one-shot pipeline stays out: WorkBuddy plans the
+ * event itself, calling each tool in turn, so it is the engine and Movents is
+ * the toolset and the record.
+ */
+export const TOOLS = ALL_TOOLS.filter((t) => t.name !== "plan_event_end_to_end");
 
 /** Every event-scoped tool checks the caller is on that event's team. */
 export function findTool(name: string): Tool | undefined {
