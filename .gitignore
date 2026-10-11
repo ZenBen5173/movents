@@ -12,3 +12,6 @@ next-env.d.ts
 .playwright-mcp/
 pitch-video/out/*
 !pitch-video/out/movents-pitch-90s-small.mp4
+
+.vercel
+.env*
