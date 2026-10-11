@@ -11,6 +11,7 @@ Campus event planning for university societies, driven end to end by Tencent Wor
   <a href="https://movents.vercel.app"><b>Live app</b></a> ·
   <a href="https://github.com/ZenBen5173/movents"><b>GitHub</b></a> ·
   <a href="docs/Movents-Pitch-Deck.pdf"><b>Slides (PDF)</b></a> ·
+  <a href="https://canva.link/iwsder9iekrtepe"><b>Full deck (Canva)</b></a> ·
   <a href="docs/Movents-Pitch-Video.mp4"><b>Pitch video</b></a>
 </p>
 
@@ -27,6 +28,7 @@ Campus event planning for university societies, driven end to end by Tencent Wor
 | **GitHub repository** | https://github.com/ZenBen5173/movents |
 | **Deployed application** | https://movents.vercel.app |
 | **Presentation slides (PDF)** | [docs/Movents-Pitch-Deck.pdf](docs/Movents-Pitch-Deck.pdf) |
+| **Full pitch deck (Canva)** | [canva.link/iwsder9iekrtepe](https://canva.link/iwsder9iekrtepe), the complete deck with everything that did not fit in the 3-minute pitch |
 | **Pitch video (1:30)** | [docs/Movents-Pitch-Video.mp4](docs/Movents-Pitch-Video.mp4) |
 
 <p align="center"><img src="docs/movents-vercel-qr.png" alt="QR code to movents.vercel.app" width="160" /><br/><sub>Scan to open the live app</sub></p>
