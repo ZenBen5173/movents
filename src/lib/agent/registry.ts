@@ -3,7 +3,7 @@ import { Run } from "./run";
 import * as T from "./tools";
 import { execute, classify } from "./pipelines";
 import { parsePrompt } from "../planning";
-import { appUrl, today } from "../appurl";
+import { appUrl, signToken, today } from "../appurl";
 import { one, query } from "../db";
 import { decideApproval } from "../actions";
 import { runScheduler } from "../scheduler";
@@ -11,7 +11,7 @@ import { loadBundle, budgetTotals } from "../docs/builders";
 import { generateKit, imageHref, needsImage, refreshPrompts, setImage } from "../marketing";
 import { update as updateRow } from "../db";
 import type { AgentRun, Creative, StepStatus, User } from "../types";
-import { addMembers, assertMember, listMembers, removeMember, resolvePeople, visibleSql } from "../members";
+import { addMembers, assertMember, assertMemberOf, listMembers, removeMember, resolvePeople, visibleSql } from "../members";
 import { offerLabel, outreachSponsors, recordSponsor, saveSponsors, type Decision, type SponsorInput } from "../sponsors";
 import { audit } from "../audit";
 import type { Sponsor } from "../types";
@@ -437,7 +437,19 @@ const ALL_TOOLS: Tool[] = [
           const path = String(a.file_path);
           const ext = path.split(".").pop()?.toLowerCase() ?? "png";
           const mime = ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime" } as Record<string, string>)[ext] ?? "image/png";
-          media = `data:${mime};base64,${(await fs.readFile(path)).toString("base64")}`;
+          const file = await fs.readFile(path).catch(() => null);
+          // Movents runs on another machine (e.g. Vercel): the file is on WorkBuddy's computer, so upload it.
+          if (!file) {
+            await assertMemberOf(u, "creatives", String(a.creative_id));
+            const link = `${appUrl()}/api/creatives/${String(a.creative_id)}/upload?t=${signToken(`upload:${String(a.creative_id)}`)}`;
+            return { attached: false, upload_needed: true, run_this_command: `curl -X POST -H "Content-Type: ${mime}" --data-binary "@${path}" "${link}"`, note: "Movents runs on another machine, so run this shell command on your computer to upload the file. The link works only for this creative." };
+          }
+          media = `data:${mime};base64,${file.toString("base64")}`;
+        }
+        if (/^https:\/\//.test(media) && !/\.(mp4|webm|mov)(\?|$)/i.test(media)) {
+          // Store the bytes: generator links (e.g. signed URLs) expire.
+          const res = await fetch(media);
+          if (res.ok) media = `data:${(res.headers.get("content-type") ?? "image/png").split(";")[0]};base64,${Buffer.from(await res.arrayBuffer()).toString("base64")}`;
         }
         if (!media) throw new Error("file_path, media_url or media_base64 is required");
         // Code-drawn posters (flat shapes + text) compress to a few dozen KB; real AI art does not.

@@ -48,6 +48,7 @@ Finish with `finish_run`.
 - Use your **image generation tool**: `ImageGen`, or Miora `miora_text_to_image` (call `connect_cloud_service` first for its `tempKey`, then pass `resultFiles[].localPath` as `file_path`).
 - Send the creative's `image_prompt` as is, at its width x height. It already has the scene, style and exact text.
 - **Never draw a poster with code**: no Python/PIL, HTML, SVG, canvas or screenshots. They come out as a blank page with a title, and Movents rejects them.
+- If `attach_creative_media` returns `run_this_command`, run that command in your shell to upload the file (Movents is online, not on this computer).
 - If no image tool works, tell the user and skip the images. Don't fake them.
 
 ## 4. After the event
