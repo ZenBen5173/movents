@@ -11,7 +11,10 @@ import { SCHEMA_SQL } from "./schema";
  */
 
 type Row = Record<string, unknown>;
-type Engine = { query: (sql: string, params?: unknown[]) => Promise<Row[]> };
+type Engine = {
+  query: (sql: string, params?: unknown[]) => Promise<Row[]>;
+  repair?: (q: Engine["query"]) => Promise<void>;
+};
 
 const g = globalThis as unknown as { __epDb?: Promise<Engine> };
 
@@ -19,11 +22,28 @@ async function createEngine(): Promise<Engine> {
   const url = process.env.DATABASE_URL;
   if (url) {
     const { default: postgres } = await import("postgres");
-    const sql = postgres(url, { prepare: false, max: 5, idle_timeout: 20 });
-    return {
+    // insert()/update() already JSON.stringify objects. The driver's default
+    // json serializer would stringify them again and store a jsonb *string*
+    // ('"[]"'), so pass strings through untouched.
+    const sql = postgres(url, {
+      prepare: false,
+      max: 5,
+      idle_timeout: 20,
+      types: {
+        json: {
+          to: 114,
+          from: [114, 3802],
+          serialize: (x: unknown) => (typeof x === "string" ? x : JSON.stringify(x)),
+          parse: (x: string) => JSON.parse(x),
+        },
+      },
+    });
+    const pg: Engine = {
       query: async (text, params = []) =>
         (await sql.unsafe(text, params as never[])) as unknown as Row[],
     };
+    pg.repair = repairDoubleEncodedJson;
+    return pg;
   }
   const { PGlite } = await import("@electric-sql/pglite");
   const path = await import("node:path");
@@ -52,9 +72,33 @@ async function init(): Promise<Engine> {
   for (const stmt of SCHEMA_SQL.split(";\n").map((s) => s.trim()).filter(Boolean)) {
     await engine.query(stmt);
   }
+  await engine.repair?.(engine.query);
   const { seedIfEmpty } = await import("./seed");
   await seedIfEmpty(engine.query);
   return engine;
+}
+
+/**
+ * Undo rows written while the json serializer double-encoded values: a jsonb
+ * string whose text is itself an array/object becomes that array/object.
+ */
+async function repairDoubleEncodedJson(q: Engine["query"]) {
+  const cols = await q(
+    `SELECT table_name, column_name FROM information_schema.columns
+     WHERE table_schema = current_schema() AND data_type = 'jsonb'`,
+  );
+  for (const c of cols) {
+    const t = `"${String(c.table_name)}"`;
+    const col = `"${String(c.column_name)}"`;
+    try {
+      await q(
+        `UPDATE ${t} SET ${col} = (${col} #>> '{}')::jsonb
+         WHERE jsonb_typeof(${col}) = 'string' AND left(ltrim(${col} #>> '{}'), 1) IN ('[', '{')`,
+      );
+    } catch (err) {
+      console.error(`jsonb repair skipped for ${t}.${col}`, err);
+    }
+  }
 }
 
 function engine(): Promise<Engine> {
