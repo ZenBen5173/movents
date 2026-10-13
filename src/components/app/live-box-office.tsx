@@ -1,39 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { AssistantCursor, stepInfo, type LiveRun } from "@/components/app/live-build";
+import { AssistantCursor, stepInfo, useLiveRuns } from "@/components/app/live-build";
 
 /** Box office: projects your AI assistant is planning right now, filling in as its steps land. */
 export function LiveBoxOffice() {
-  const [runs, setRuns] = useState<LiveRun[]>([]);
+  const all = useLiveRuns("/api/live");
   const [pos, setPos] = useState({ x: -100, y: -100 });
   const host = useRef<HTMLUListElement>(null);
   const router = useRouter();
   const seen = useRef(new Set<string>());
 
+  const plans = useMemo(() => (all ?? []).filter((x) => x.source !== "builtin" || x.status === "running"), [all]);
+  const runs = useMemo(() => plans.filter((x) => x.status === "running"), [plans]);
+
+  // A run just finished: refresh (once) so it joins the normal project list.
   useEffect(() => {
-    let alive = true;
-    const tick = async () => {
-      try {
-        const r = await fetch("/api/live", { cache: "no-store" });
-        if (!r.ok || !alive) return;
-        const j = (await r.json()) as { runs: LiveRun[] };
-        const plans = j.runs.filter((x) => x.source !== "builtin" || x.status === "running");
-        // A run just finished: refresh so it joins the normal project list.
-        for (const x of plans) if (x.status !== "running" && !seen.current.has(x.id)) (seen.current.add(x.id), router.refresh());
-        setRuns(plans.filter((x) => x.status === "running"));
-      } catch {}
-    };
-    tick();
-    const t = setInterval(tick, 1200);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-  }, [router]);
+    let fresh = false;
+    for (const x of plans) {
+      if (x.status === "running" || seen.current.has(x.id)) continue;
+      seen.current.add(x.id);
+      fresh = true;
+    }
+    if (fresh) router.refresh();
+  }, [plans, router]);
 
   useEffect(() => {
     if (!runs.length) return;

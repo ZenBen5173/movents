@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { one, query } from "../db";
 import { fmtDate, fmtRM } from "../appurl";
 import { feedbackThemes, nps } from "../planning";
@@ -9,11 +10,15 @@ import { templateOf, type SopTemplate } from "../templates";
 
 export type Bundle = Awaited<ReturnType<typeof loadBundle>>;
 
-export async function loadBundle(eventId: string) {
-  const event = await one<EventRow>("SELECT * FROM events WHERE id = $1", [eventId]);
-  if (!event) return null;
-  const society = await one<{ id: string; name: string; university_id: string }>("SELECT * FROM societies WHERE id = $1", [event.society_id]);
-  const university = society ? await one<University>("SELECT * FROM universities WHERE id = $1", [society.university_id]) : null;
+/** Everything about one event, for pages and documents. Memoised per request. */
+export const loadBundle = cache(async (eventId: string) => {
+  const row = await one<{ event: EventRow; society: { id: string; name: string; university_id: string }; university: University }>(
+    `SELECT to_jsonb(e) AS event, jsonb_build_object('id', s.id, 'name', s.name, 'university_id', s.university_id) AS society, to_jsonb(u) AS university
+     FROM events e JOIN societies s ON s.id = e.society_id JOIN universities u ON u.id = s.university_id WHERE e.id = $1`,
+    [eventId],
+  );
+  if (!row) return null;
+  const { event, society, university } = row;
   const [venue, tasks, speakers, vendors, lines, risks, users, runsheet, promo, rsvps, feedback, volunteers] = await Promise.all([
     event.venue_id ? one<Venue>("SELECT * FROM venues WHERE id = $1", [event.venue_id]) : Promise.resolve(null),
     query<Task>("SELECT * FROM tasks WHERE event_id = $1 ORDER BY due_date, sort", [eventId]),
@@ -29,7 +34,7 @@ export async function loadBundle(eventId: string) {
     query<{ name: string; role: string; phone: string; shift: string; emergency: boolean }>("SELECT * FROM volunteers WHERE event_id = $1 ORDER BY emergency DESC, name", [eventId]),
   ]);
   return { event, society, university, venue, tasks, speakers, vendors, lines, risks, users, runsheet, promo, rsvps, feedback, volunteers };
-}
+});
 
 export function budgetTotals(lines: BudgetLine[], contingencyPct: number) {
   const subtotal = round(lines.reduce((s, l) => s + l.estimated, 0));

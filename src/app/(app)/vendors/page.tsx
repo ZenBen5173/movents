@@ -1,6 +1,5 @@
 import { pageUser } from "@/lib/guard";
 import { redirect } from "next/navigation";
-import { currentUser } from "@/lib/session";
 import { one } from "@/lib/db";
 
 export const dynamic = "force-dynamic";

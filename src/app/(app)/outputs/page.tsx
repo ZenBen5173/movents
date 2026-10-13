@@ -1,7 +1,6 @@
 import { pageUser } from "@/lib/guard";
 import Link from "next/link";
 import { FileStack } from "lucide-react";
-import { currentUser } from "@/lib/session";
 import { query } from "@/lib/db";
 import { fmtDate } from "@/lib/appurl";
 import { eventOutputs } from "@/lib/outputs";

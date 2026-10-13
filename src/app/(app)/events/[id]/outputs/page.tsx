@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { outputsUrl, appUrl } from "@/lib/appurl";
+import { outputsUrl } from "@/lib/appurl";
 import { FileBrowser, type FolderNode } from "@/components/app/file-browser";
 import { canViewEvent } from "@/lib/guard";
 

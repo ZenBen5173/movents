@@ -1,6 +1,5 @@
 import { pageUser } from "@/lib/guard";
 import Link from "next/link";
-import { currentUser } from "@/lib/session";
 import { query } from "@/lib/db";
 import { fmtDate, fmtRM, today } from "@/lib/appurl";
 import { Empty, PageHeader, Pill } from "@/components/app/ui";

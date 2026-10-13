@@ -1,5 +1,4 @@
 import { pageUser } from "@/lib/guard";
-import { currentUser } from "@/lib/session";
 import { one, query } from "@/lib/db";
 import { canManageSop } from "@/lib/rbac";
 import { SopView } from "@/components/app/sop-view";

@@ -1,6 +1,6 @@
 import "server-only";
 import { id, insert, one, query, update } from "./db";
-import { appUrl, fmtDate, fmtRM, outputsUrl } from "./appurl";
+import { fmtDate, fmtRM, outputsUrl } from "./appurl";
 import { emailShell } from "./integrations/email";
 import { gate, type GateResult } from "./actions";
 import type { EventRow, Sponsor, SponsorStatus, User, Venue } from "./types";

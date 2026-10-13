@@ -2,7 +2,6 @@ import { pageUser } from "@/lib/guard";
 import Link from "next/link";
 import { query } from "@/lib/db";
 import { today } from "@/lib/appurl";
-import { currentUser } from "@/lib/session";
 import { visibleSql } from "@/lib/members";
 import type { AgentRun, Role } from "@/lib/types";
 import { PromptBox } from "@/components/app/prompt-box";

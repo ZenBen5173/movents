@@ -1,5 +1,4 @@
 import { pageUser } from "@/lib/guard";
-import { currentUser } from "@/lib/session";
 import { isFinal } from "@/lib/rbac";
 import { PageHeader } from "@/components/app/ui";
 import { OnboardWizard } from "@/components/app/onboard-wizard";

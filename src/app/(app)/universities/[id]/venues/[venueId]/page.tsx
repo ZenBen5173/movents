@@ -5,7 +5,6 @@ import { ArrowLeft } from "lucide-react";
 import { one, query } from "@/lib/db";
 import { today } from "@/lib/appurl";
 import { overlaps } from "@/lib/planning";
-import { currentUser } from "@/lib/session";
 import { isMember } from "@/lib/members";
 import { VenueCalendar, type Booking } from "@/components/app/venue-calendar";
 import { FloorPlan } from "@/components/app/floor-plans";

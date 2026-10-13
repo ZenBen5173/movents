@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Camera, CameraOff, Check, Search } from "lucide-react";
 import { toast } from "sonner";
-import jsQR from "jsqr";
 import { checkIn, checkInByTicket } from "@/app/actions";
 import { fireConfetti } from "@/components/ep/kit";
 import { Pill } from "@/components/app/ui";
@@ -70,10 +69,12 @@ export function CheckinClient({ eventId, title, rows }: { eventId: string; title
     let raf = 0;
     let last = "";
     let busy = false;
+    // jsQR is only needed while scanning, so it is loaded on demand.
+    let jsQR: typeof import("jsqr").default | null = null;
     const tick = async () => {
       const v = video.current;
       const c = canvas.current;
-      if (v && c && v.readyState >= 2 && !busy) {
+      if (v && c && jsQR && v.readyState >= 2 && !busy) {
         const w = 480;
         const h = Math.round((v.videoHeight / v.videoWidth) * w) || 360;
         c.width = w;
@@ -100,7 +101,9 @@ export function CheckinClient({ eventId, title, rows }: { eventId: string; title
     };
     (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+        const [media, mod] = await Promise.all([navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false }), import("jsqr")]);
+        stream = media;
+        jsQR = mod.default;
         if (video.current) {
           video.current.srcObject = stream;
           await video.current.play();

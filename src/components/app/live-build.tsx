@@ -103,24 +103,66 @@ function Sparkles({ x, y, k }: { x: number; y: number; k: number }) {
   );
 }
 
-function usePoll<T>(url: string, ms: number) {
-  const [data, setData] = useState<T | null>(null);
+const FAST_MS = 1500; // a run is live: keep the view close behind it
+const SLOW_MS = 15000; // nothing running: just watch for a new run starting
+const MAX_BACKOFF_MS = 30000;
+
+/**
+ * Polls /api/live for runs. Fast while a run is active, slow when idle, paused
+ * while the tab is hidden (with an immediate fetch on return), and backs off
+ * quietly on errors. In-flight requests are aborted on unmount.
+ */
+export function useLiveRuns(url: string) {
+  const [runs, setRuns] = useState<LiveRun[] | null>(null);
   useEffect(() => {
-    let alive = true;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let ctrl: AbortController | null = null;
+    let fails = 0;
+    const hidden = () => document.visibilityState === "hidden";
+    const schedule = (ms: number) => {
+      clearTimeout(timer);
+      if (!stopped && !hidden()) timer = setTimeout(tick, ms);
+    };
     const tick = async () => {
+      clearTimeout(timer);
+      ctrl?.abort();
+      const c = new AbortController();
+      ctrl = c;
+      let next: number;
       try {
-        const r = await fetch(url, { cache: "no-store" });
-        if (r.ok && alive) setData(await r.json());
-      } catch {}
+        const r = await fetch(url, { cache: "no-store", signal: c.signal });
+        if (!r.ok) throw new Error(`live ${r.status}`);
+        const j = (await r.json()) as { runs?: LiveRun[] };
+        if (stopped || c.signal.aborted) return;
+        const list = j.runs ?? [];
+        fails = 0;
+        setRuns(list);
+        next = list.some((x) => x.status === "running") ? FAST_MS : SLOW_MS;
+      } catch {
+        // Aborted (unmount, hidden tab or a newer tick): that path schedules itself.
+        if (stopped || c.signal.aborted) return;
+        fails += 1;
+        next = Math.min(MAX_BACKOFF_MS, FAST_MS * 2 ** fails);
+      }
+      schedule(next);
     };
-    tick();
-    const t = setInterval(tick, ms);
+    const onVisibility = () => {
+      if (hidden()) {
+        clearTimeout(timer);
+        ctrl?.abort();
+      } else tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    if (!hidden()) tick();
     return () => {
-      alive = false;
-      clearInterval(t);
+      stopped = true;
+      clearTimeout(timer);
+      ctrl?.abort();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [url, ms]);
-  return data;
+  }, [url]);
+  return runs;
 }
 
 /** Pick a spot on something real in the content area, so the cursor looks like it is working on it. */
@@ -136,8 +178,8 @@ function spotIn(host: HTMLElement | null, n: number) {
 }
 
 export function LiveBuild({ eventId }: { eventId: string }) {
-  const data = usePoll<{ runs: LiveRun[] }>(`/api/live?event=${eventId}`, 1000);
-  const run = data?.runs?.[0] ?? null;
+  const runs = useLiveRuns(`/api/live?event=${eventId}`);
+  const run = runs?.[0] ?? null;
   const router = useRouter();
   const path = usePathname();
   const host = useRef<HTMLDivElement>(null);

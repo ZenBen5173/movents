@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { loadBundle, budgetTotals } from "@/lib/docs/builders";
 import { query } from "@/lib/db";
-import { daysBetween, fmtDate, fmtRM, today } from "@/lib/appurl";
+import { daysBetween, fmtDate, today } from "@/lib/appurl";
 import { blockedBy, criticalPath } from "@/lib/planning";
 import { Card } from "@/components/app/ui";
 import { OverviewStats } from "@/components/app/overview-stats";

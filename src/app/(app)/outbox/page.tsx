@@ -1,6 +1,5 @@
 import { pageUser } from "@/lib/guard";
 import { query } from "@/lib/db";
-import { currentUser } from "@/lib/session";
 import { visibleSql } from "@/lib/members";
 import { PageHeader, Empty } from "@/components/app/ui";
 import { OutboxList, type EventMailGroup } from "@/components/app/outbox-list";
