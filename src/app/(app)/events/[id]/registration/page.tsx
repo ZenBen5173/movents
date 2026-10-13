@@ -66,7 +66,7 @@ export default async function RegistrationPage({ params }: { params: Promise<{ i
         <div className="group relative">
           <a href={`/e/${id}`} target="_blank" className="flex h-10 items-center gap-2 rounded-xl border-[1.5px] border-ink bg-card px-3 text-sm font-semibold hover:bg-sand/50"><QrCode className="size-4" />Sign-up page</a>
           <span className="pointer-events-none absolute left-0 top-full z-30 mt-2 rounded-xl border-[1.5px] border-ink bg-white p-2 opacity-0 shadow-[3px_3px_0_0_#161514] transition-opacity group-hover:opacity-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img src={qr} alt="" className="size-32" />
           </span>
         </div>

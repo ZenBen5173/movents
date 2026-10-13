@@ -57,7 +57,7 @@ export default async function PublicEvent({ params, searchParams }: { params: Pr
         </div>
         <div className="flex flex-col-reverse gap-4 md:flex-col">
           {poster && (
-            // eslint-disable-next-line @next/next/no-img-element
+             
             <img src={`/api/creatives/${poster.id}/image?v=${new Date(poster.updated_at).getTime()}`} alt={`${ev.title} poster`} className="w-full rounded-2xl border border-border shadow-sm" />
           )}
           <RsvpForm eventId={id} full={left === 0} />

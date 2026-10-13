@@ -84,3 +84,19 @@ test("a society can be created with a new university", async () => {
   assert.equal(row?.name, `Test University ${tag}`);
   assert.equal(row?.sop.version, "template");
 });
+
+test("deleting an account removes access and personal data; sole Presidents must hand over first", async () => {
+  const { deleteAccount } = await import("../src/lib/auth/accounts");
+  const a = await society("theta");
+  await assert.rejects(deleteAccount(a.pres.id), /only President/);
+  const email = `leaver-${tag}@uni.test`;
+  await W.inviteMember(a.pres, { email, role: "committee" });
+  const inv = await one<{ id: string }>("SELECT id FROM invites WHERE email = $1", [email]);
+  const m = await findOrCreateUser({ email, verified: true });
+  await W.acceptInviteById(m, inv!.id);
+  await deleteAccount(m.id);
+  const row = await one<{ name: string; email: string; society_id: string | null }>("SELECT name, email, society_id FROM users WHERE id = $1", [m.id]);
+  assert.equal(row?.name, "Deleted user");
+  assert.match(row!.email, /@invalid$/);
+  assert.equal(await one("SELECT 1 FROM memberships WHERE user_id = $1", [m.id]), null);
+});

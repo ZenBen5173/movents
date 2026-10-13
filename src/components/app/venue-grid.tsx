@@ -42,7 +42,7 @@ export function VenueGrid({ uni, venues }: { uni: string; venues: V[] }) {
                 <Link href={`/universities/${uni}/venues/${v.id}`} className="group block">
                   <div className="relative aspect-[16/10] overflow-hidden rounded-xl border-[1.5px] border-ink bg-sand shadow-[3px_3px_0_0_#161514] transition-all group-hover:-translate-y-0.5 group-hover:shadow-[5px_5px_0_0_#161514]">
                     {v.photo_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
+                       
                       <img src={v.photo_url} alt={v.name} loading="lazy" className="size-full object-cover transition-transform duration-500 group-hover:scale-105" />
                     ) : hasPlan ? (
                       <div className="flex size-full items-start justify-center overflow-hidden bg-[#fbf8f1] p-2 [&_.mb-2]:hidden [&_svg]:border-0">

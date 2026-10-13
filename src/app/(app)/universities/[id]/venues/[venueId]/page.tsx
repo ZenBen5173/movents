@@ -49,7 +49,7 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
       <div className="grid gap-6 md:grid-cols-[1.3fr_1fr]">
         <div className="relative aspect-[16/9] overflow-hidden rounded-2xl border-[1.5px] border-ink bg-sand shadow-[4px_4px_0_0_#161514]">
           {v.photo_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
+             
             <img src={v.photo_url} alt={v.name} className="size-full object-cover" />
           ) : (
             <div className="grid size-full place-items-center text-muted-foreground"><Icon name="building-2" size={36} /></div>

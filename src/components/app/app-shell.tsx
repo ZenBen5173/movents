@@ -124,7 +124,7 @@ function UniNode({ u, path, onNavigate }: { u: Uni; path: string; onNavigate?: (
         </button>
         <Link href={base} onClick={onNavigate} className={cn("flex min-w-0 flex-1 items-center gap-2", inside ? "font-semibold" : "text-ink/80")}>
           {uniIcon(u.id) ? (
-            // eslint-disable-next-line @next/next/no-img-element
+             
             <img src={uniIcon(u.id)!} alt="" className="size-[18px] shrink-0 rounded-[4px] bg-white object-contain p-px ring-1 ring-ink/10 transition-transform group-hover:scale-110" />
           ) : (
             <Icon name="landmark" size={14} />
@@ -161,7 +161,7 @@ function SidebarBody({ path, pending, projects, universities, user, workspaces, 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2.5 px-3 pb-3 pt-4">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        { }
         <img src="/movents-logo.svg" alt="Movents" className="size-10 shrink-0 transition-transform duration-300 hover:-rotate-6 hover:scale-105" />
         <div className="min-w-0 leading-tight">
           <p className="font-display text-[15px] font-bold">Movents</p>

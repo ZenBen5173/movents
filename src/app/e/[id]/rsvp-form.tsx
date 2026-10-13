@@ -34,7 +34,7 @@ export function RsvpForm({ eventId, full }: { eventId: string; full: boolean }) 
             <PartyPopper className="mx-auto size-8 text-primary" />
             <p className="mt-2 font-semibold">{ticket.status === "waitlist" ? "You're on the waitlist" : "You're in!"}</p>
             <p className="text-xs text-muted-foreground">Show this QR at the door.</p>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             {qr && <img src={qr} alt={`Ticket ${ticket.ticket}`} className="mx-auto mt-3 size-48 rounded-lg bg-white p-2" />}
             <p className="mt-2 font-mono text-sm">{ticket.ticket}</p>
           </motion.div>

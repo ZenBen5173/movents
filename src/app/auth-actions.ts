@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { publicError } from "@/lib/errors";
-import { consumeLoginLink, normaliseEmail, sendLoginLink } from "@/lib/auth/accounts";
+import { consumeLoginLink, deleteAccount, endAllSessions, normaliseEmail, sendLoginLink } from "@/lib/auth/accounts";
 import { clientIp, rateLimit, RateLimitError } from "@/lib/ratelimit";
 import { endSession, startSession, currentUser } from "@/lib/session";
 import { audit } from "@/lib/audit";
@@ -38,5 +38,29 @@ export async function signOut() {
   const u = await currentUser();
   await endSession();
   if (u) await audit(u, "session.sign_out", {});
+  redirect("/login");
+}
+
+export async function signOutEverywhere() {
+  const u = await currentUser();
+  if (u) {
+    await endAllSessions(u.id);
+    await audit(u, "session.sign_out_all", {});
+  }
+  await endSession();
+  redirect("/login");
+}
+
+export async function deleteMyAccount(confirmEmail: string): Promise<{ ok: false; error: string } | never> {
+  const u = await currentUser();
+  if (!u) redirect("/login");
+  if (normaliseEmail(confirmEmail) !== normaliseEmail(u.email)) return { ok: false, error: "Type your email exactly to confirm." };
+  try {
+    await audit(u, "account.deleted", {});
+    await deleteAccount(u.id);
+  } catch (err) {
+    return { ok: false, error: publicError(err) };
+  }
+  await endSession();
   redirect("/login");
 }

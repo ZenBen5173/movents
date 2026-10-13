@@ -44,7 +44,7 @@ export default async function SpeakersPage({ params }: { params: Promise<{ id: s
             <div className="group relative">
               <DocModal href={`/api/outputs/${id}/speaker-${s.id}.pdf`} title={s.name} className="flex w-full items-center gap-3 rounded-xl text-left transition-colors hover:bg-sand/50">
                 {s.photo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
+                   
                   <img src={s.photo_url} alt={s.name} className="size-16 shrink-0 rounded-xl border-[1.5px] border-ink object-cover transition-transform duration-300 group-hover:scale-105" />
                 ) : (
                   <span className="grid size-16 shrink-0 place-items-center rounded-xl border-[1.5px] border-ink bg-sand font-display text-xl font-bold">{initials(s.name)}</span>

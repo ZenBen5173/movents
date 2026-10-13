@@ -86,3 +86,33 @@ export async function pruneAuthTables() {
   await query("DELETE FROM oauth_tokens WHERE (refresh_expires_at IS NULL OR refresh_expires_at < now()) AND access_expires_at < now() - interval '1 day'");
   await query("DELETE FROM rate_limits WHERE window_start < now() - interval '1 day'");
 }
+
+/**
+ * Delete an account: memberships, team places, sessions and tokens go; the
+ * user row is anonymised so audit history keeps its shape without personal
+ * data. Refused while the user is the only President of a society.
+ */
+export async function deleteAccount(userId: string) {
+  const sole = await one<{ name: string }>(
+    `SELECT s.name FROM memberships m JOIN societies s ON s.id = m.society_id
+     WHERE m.user_id = $1 AND m.role = 'president'
+       AND NOT EXISTS (SELECT 1 FROM memberships o WHERE o.society_id = m.society_id AND o.role = 'president' AND o.user_id <> $1)
+     LIMIT 1`,
+    [userId],
+  );
+  if (sole) throw new Error(`You are the only President of ${sole.name}. Appoint another President first.`);
+  await transaction(async () => {
+    for (const t of ["memberships", "event_members", "sessions", "api_tokens", "oauth_tokens", "oauth_codes", "notifications"]) {
+      await query(`DELETE FROM ${t} WHERE user_id = $1`, [userId]);
+    }
+    await query(
+      `UPDATE users SET name = 'Deleted user', email = 'deleted+' || id || '@invalid', phone = NULL, google_sub = NULL,
+         avatar_url = NULL, email_verified_at = NULL, society_id = NULL, department = NULL WHERE id = $1`,
+      [userId],
+    );
+  });
+}
+
+export async function endAllSessions(userId: string) {
+  await query("DELETE FROM sessions WHERE user_id = $1", [userId]);
+}

@@ -26,7 +26,7 @@ export default async function UniversitiesPage() {
           <Link key={u.id} href={`/universities/${u.id}`} className="group grid grid-cols-[64px_1fr_auto] items-center gap-4 border-b-[1.5px] border-ink py-5 hover:bg-sand/40">
             <span className="grid size-14 place-items-center rounded-xl border-[1.5px] border-ink bg-white p-1.5 transition-transform group-hover:-rotate-3">
               {uniIcon(u.id) ? (
-                // eslint-disable-next-line @next/next/no-img-element
+                 
                 <img src={uniIcon(u.id)!} alt="" className="size-full object-contain" />
               ) : (
                 <span className="font-display text-lg font-bold">{u.short_name.slice(0, 2)}</span>

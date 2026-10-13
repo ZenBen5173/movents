@@ -98,7 +98,7 @@ export function CursorCard({
               {preview ?? (
                 <>
                   {image && (
-                    // eslint-disable-next-line @next/next/no-img-element
+                     
                     <img src={image} alt="" className="w-full h-auto rounded-md mb-3 object-cover" />
                   )}
                   {description && (

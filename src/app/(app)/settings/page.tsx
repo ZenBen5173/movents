@@ -11,6 +11,7 @@ import { listOpenInvites, listPeople } from "@/lib/workspace";
 import { PageHeader } from "@/components/app/ui";
 import { SettingsClient, type Integration } from "@/components/app/settings-client";
 import { MembersPanel } from "@/components/app/members-panel";
+import { AccountPanel } from "@/components/app/account-panel";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Settings" };
@@ -50,6 +51,7 @@ export default async function SettingsPage() {
         people={people.map((p) => ({ ...p, joined: new Date(p.joined).toISOString() }))}
         invites={invites.map((i) => ({ ...i, expires_at: new Date(i.expires_at).toISOString() }))}
       />
+      <AccountPanel email={user.email} />
     </div>
   );
 }

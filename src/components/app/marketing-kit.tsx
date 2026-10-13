@@ -79,7 +79,7 @@ function KitCard({ c, index, nano }: { c: KitItem; index: number; nano: boolean 
           {c.video ? (
             <video src={c.href} controls playsInline className="size-full object-cover" />
           ) : (
-            // eslint-disable-next-line @next/next/no-img-element
+             
             <img src={c.href} alt={c.title} className="size-full object-cover" loading="lazy" />
           )}
           {isVideoKind && !c.video && (

@@ -476,7 +476,7 @@ function FileChip({ file }: { file: CellFile }) {
   const preview = (
     <>
       {file.image ? (
-        // eslint-disable-next-line @next/next/no-img-element
+         
         <img
           src={file.url}
           alt=""
@@ -502,7 +502,7 @@ function FileChip({ file }: { file: CellFile }) {
           {...shared}
           className="block shrink-0 rounded ring-1 ring-[var(--border)] transition-transform duration-200 hover:-translate-y-0.5 hover:ring-[var(--foreground)]/30"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          { }
           <img src={file.url} alt={file.name} className="size-6 rounded object-cover" />
         </a>
       ) : (
