@@ -22,7 +22,7 @@ export function OverviewHero({ days, title, date, venue, id, flags }: { days: nu
         {flags.length > 0 && (
           <div className="mt-8 grid gap-5 sm:grid-cols-2">
             {flags.slice(0, 4).map((f, i) => (
-              <Sticky key={i} tone={f.level === "error" ? "peach" : f.message.startsWith("Demo") ? "sky" : TONES[i % TONES.length]} tilt={i % 2 ? 1.6 : -1.4} title={f.level === "error" ? "Stop the show" : f.message.startsWith("Spend") ? "Money alert" : f.message.startsWith("Demo") ? "Heads up" : "SOP clock"}>
+              <Sticky key={i} tone={f.level === "error" ? "peach" : TONES[i % TONES.length]} tilt={i % 2 ? 1.6 : -1.4} title={f.level === "error" ? "Stop the show" : f.message.startsWith("Spend") ? "Money alert" : "SOP clock"}>
                 {f.message}
               </Sticky>
             ))}

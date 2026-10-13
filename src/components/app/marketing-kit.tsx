@@ -45,7 +45,7 @@ function CopyBtn({ text, label = "Copy" }: { text: string; label?: string }) {
   );
 }
 
-const SOURCE: Record<string, string> = { template: "Branded template", "nano-banana": "Nano Banana", assistant: "AI assistant", workbuddy: "AI assistant", upload: "Uploaded" };
+const SOURCE: Record<string, string> = { template: "Branded template", "nano-banana": "Nano Banana", assistant: "AI assistant", upload: "Uploaded" };
 
 function KitCard({ c, index, nano }: { c: KitItem; index: number; nano: boolean }) {
   const [caption, setCaption] = useState(c.caption);

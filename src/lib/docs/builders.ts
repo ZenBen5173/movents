@@ -212,7 +212,6 @@ export function reportDoc(b: NonNullable<Bundle>): DocModel {
           ["Cost per attendee", fmtRM(d.costPerAttendee)],
           ["NPS", `${d.nps.nps} (n=${d.nps.n})`],
           ["Average rating", `${d.avgRating} / 5`],
-          ...(b.event.flags.some((f) => f.message.startsWith("Demo data")) ? ([["Data note", "Includes simulated demo data"]] as [string, string][]) : []),
         ],
       },
     ],

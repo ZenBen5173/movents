@@ -10,8 +10,13 @@ next-env.d.ts
 # local tooling and outputs
 .claude/
 .playwright-mcp/
-pitch-video/out/*
-!pitch-video/out/movents-pitch-90s-small.mp4
 
 .vercel
 .env*
+
+# Hackathon pitch video project (kept locally, not part of the app)
+pitch-video/
+
+# Local AI agent skill installs
+.agents/
+skills-lock.json

@@ -14,7 +14,7 @@ export function emailProvider(): EmailProvider {
   return "outbox";
 }
 
-/** Demo safety: when EMAIL_REDIRECT_TO is set, every email goes to the team test inboxes instead. */
+/** Test safety: when EMAIL_REDIRECT_TO is set, every email goes to the team test inboxes instead. */
 function redirectTargets() {
   return (process.env.EMAIL_REDIRECT_TO ?? "")
     .split(",")

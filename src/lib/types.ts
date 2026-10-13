@@ -243,7 +243,7 @@ export type AgentRun = {
   event_id: string | null;
   prompt: string;
   kind: "plan" | "report" | "custom";
-  source: "builtin" | "assistant" | "workbuddy";
+  source: "builtin" | "assistant";
   status: "running" | "done" | "failed";
   steps: AgentStep[];
   outputs: AgentOutput[];
@@ -308,7 +308,7 @@ export type Creative = {
   image_prompt: string | null;
   image_data: string | null;
   image_url: string | null;
-  image_source: "template" | "nano-banana" | "assistant" | "workbuddy" | "upload";
+  image_source: "template" | "nano-banana" | "assistant" | "upload";
   width: number;
   height: number;
   status: "draft" | "pending_approval" | "approved" | "posted";

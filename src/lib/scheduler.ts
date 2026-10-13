@@ -11,7 +11,7 @@ import type { EventRow, Rsvp, Speaker, University, User, Vendor, Venue } from ".
 
 const SYSTEM = { id: null, name: "Movents scheduler" } as const;
 
-/** Send to every attendee — or, in demo/redirect mode, one digest so test inboxes are not flooded. */
+/** Send to every attendee — or, in test/redirect mode, one digest so test inboxes are not flooded. */
 async function sendToAttendees(ev: EventRow, kind: string, subject: string, html: string) {
   const rsvps = await query<Rsvp>("SELECT * FROM rsvps WHERE event_id = $1 AND status = 'going'", [ev.id]);
   if (!rsvps.length) return { sent: 0, mode: "none" };

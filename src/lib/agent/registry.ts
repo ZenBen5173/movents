@@ -357,21 +357,6 @@ const ALL_TOOLS: Tool[] = [
     },
   },
   {
-    name: "plan_event_end_to_end",
-    description: "Run the complete Movents planning pipeline from one prompt (parse → SOP → timeline → venue → lead-time validation → speakers & suppliers → budget with adapt loop → risks → ops pack → proposal → gated sends → calendar → Luma). Returns run id, event id and links to every output. Use for one-shot demos; use the granular tools to orchestrate step by step.",
-    inputSchema: { type: "object", properties: { prompt: str('e.g. "Plan a 150-pax AI talk at Sunway on 15 Nov, budget RM3,000, with Jason and Priya."'), team: { type: "array", items: { type: "string" }, description: "Names or emails of society members working on this event. Only they (plus President, VP, advisor) can see and edit it." }, suppliers: { type: "array", items: { type: "string" }, description: "Supplier names the organiser wants used (they win over ratings and price when a saved quote matches)" } }, required: ["prompt"] },
-    run: async (a, user) => {
-      const team = Array.isArray(a.team) ? (a.team as string[]).filter(Boolean) : [];
-      const sup = Array.isArray(a.suppliers) ? (a.suppliers as string[]).filter(Boolean) : [];
-      const prompt = `${String(a.prompt)}${team.length ? ` Team: ${team.join(", ")}.` : ""}${sup.length ? ` Suppliers: ${sup.join(", ")}.` : ""}`;
-      const kind = classify(prompt);
-      const r = await Run.start(user, prompt, kind, "assistant");
-      await execute(r, kind);
-      const row = await one<AgentRun>("SELECT * FROM agent_runs WHERE id = $1", [r.id]);
-      return { run_id: r.id, status: row?.status, event_id: row?.event_id, trace_url: `${appUrl()}/runs/${r.id}`, steps: row?.steps.map((s) => `${s.status.toUpperCase()} ${s.name}: ${s.summary ?? ""}`), outputs: row?.event_id ? outputs(row.event_id) : {} };
-    },
-  },
-  {
     name: "generate_post_event_report",
     description: "Generate the post-event report (registered vs actual, budget vs actual, cost per attendee, NPS, feedback themes, lessons learned) as PDF and Word, and feed lessons back into the SOP knowledge base.",
     inputSchema: { type: "object", properties: { prompt: str('e.g. "Generate the post-event report for the AI talk."') }, required: ["prompt"] },
@@ -529,12 +514,8 @@ const ALL_TOOLS: Tool[] = [
   },
 ];
 
-/**
- * What AI assistants see. The one-shot pipeline stays out: the assistant plans
- * the event itself, calling each tool in turn, so it is the engine and Movents
- * is the toolset and the record.
- */
-export const TOOLS = ALL_TOOLS.filter((t) => t.name !== "plan_event_end_to_end");
+/** What AI assistants see: the assistant plans the event itself, calling each tool in turn. */
+export const TOOLS = ALL_TOOLS;
 
 const READ_ONLY = new Set([
   "review_brief", "list_society_members", "list_my_events", "list_event_emails", "list_sponsors", "list_meetings", "whoami", "read_sop",
