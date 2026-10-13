@@ -234,6 +234,8 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
         "SELECT u.* FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.society_id = $1 AND m.role = 'faculty_advisor' LIMIT 1",
         [ev.society_id],
       );
+      const to = String(p.to ?? faculty?.email ?? "").trim();
+      if (!to) throw new Error("This society has no faculty advisor yet. Invite one in Settings → Members, then submit again.");
       const reqId = req?.id ?? "direct";
       const link = `${appUrl()}/faculty/${reqId}?t=${signToken(`faculty:${reqId}`, 60)}`;
       const html = `${String(p.html)}<p style="margin-top:20px">
@@ -241,7 +243,7 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
 <a href="${link}&d=reject" style="background:#e5484d;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Reject</a></p>
 <p style="font-size:13px">Review the full proposal: <a href="${outputsUrl(ev.id, "proposal.pdf")}">PDF</a> · <a href="${outputsUrl(ev.id, "proposal.docx")}">Word</a> · <a href="${outputsUrl(ev.id, "budget.xlsx")}">Budget sheet</a></p>`;
       const email = await sendEmail({
-        to: String(p.to ?? faculty?.email),
+        to,
         subject: String(p.subject),
         html: emailShell("Event proposal for your approval", html),
         kind: "faculty_submission",

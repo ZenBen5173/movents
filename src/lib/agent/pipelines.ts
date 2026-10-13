@@ -237,16 +237,17 @@ async function reportPipeline(run: Run) {
   const eventId = ev.output!.id;
   await run.setEvent(eventId);
 
-  await run.step("Sync RSVPs & check-ins", `luma.get_guests (${lumaMode()}) + meetup`, { event_id: eventId }, async () => {
-    const notes = await T.simulateEventDay(eventId);
+  await run.step("Registrations & check-ins", "db.rsvps", { event_id: eventId }, async () => {
     const b = await loadBundle(eventId);
     const reg = b!.rsvps.filter((r) => r.status !== "cancelled").length;
     const att = b!.rsvps.filter((r) => r.checked_in).length;
+    const lines = b!.lines.filter((l) => l.actual != null).length;
+    const missing = [!att && "no check-ins recorded", !lines && "no actual spend entered", !b!.feedback.length && "no survey responses yet"].filter(Boolean) as string[];
     return {
-      output: { registered: reg, attended: att, notes },
-      summary: `${reg} registered, ${att} checked in${notes.length ? " (includes simulated demo data)" : ""}`,
-      status: notes.length ? "warn" : "ok",
-      adapt: notes.length ? notes.join(" ") : undefined,
+      output: { registered: reg, attended: att },
+      summary: `${reg} registered, ${att} checked in`,
+      status: missing.length ? "warn" : "ok",
+      adapt: missing.length ? `The report will be incomplete: ${missing.join(", ")}.` : undefined,
     };
   });
 

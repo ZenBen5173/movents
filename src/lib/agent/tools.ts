@@ -1,6 +1,6 @@
 import "server-only";
 import crypto from "node:crypto";
-import { id, insert, one, query, update } from "../db";
+import { id, insert, one, query, transaction, update } from "../db";
 import { audit } from "../audit";
 import { gate, speakerEmail, type GateResult } from "../actions";
 import { appUrl, fmtDate, fmtRM, today } from "../appurl";
@@ -25,7 +25,7 @@ import { placeholderSpeakers, referenceSuppliers, SUPPLIER_CATEGORIES, type Spea
 import { weatherFor } from "../integrations/weather";
 import { emailShell } from "../integrations/email";
 import { forwardNote, vendorRecipient } from "../vendor-contact";
-import { lumaGuests, lumaMode, meetupGuests, meetupMode, mockGuests } from "../integrations/ticketing";
+import { lumaGuests, lumaMode, meetupGuests, meetupMode } from "../integrations/ticketing";
 import { loadBundle, budgetTotals, validateProposal, reportData } from "../docs/builders";
 import type { BudgetLine, EventRow, Speaker, University, User, Vendor, Venue } from "../types";
 import { addMembers, resolvePeople, visibleSql } from "../members";
@@ -389,8 +389,12 @@ export async function outreachSpeakers(user: User, eventId: string, runId: strin
   const speakers = await query<Speaker>("SELECT * FROM speakers WHERE event_id = $1 AND status = 'found'", [eventId]);
   const results: { speaker: string; status: GateResult["status"]; detail: string }[] = [];
   for (const sp of speakers) {
+    if (!sp.email) {
+      results.push({ speaker: sp.name, status: "failed", detail: "No email on file. Add one on the Speakers page, then send again." });
+      continue;
+    }
     const { subject, html } = speakerEmail(sp, ev, venue, uni.society_name, user);
-    const r = await gate(user, "email.speaker", `Invite ${sp.name} to speak at ${ev.title}`, { speaker_id: sp.id, to: sp.email ?? `${sp.name.toLowerCase().replace(/[^a-z]+/g, ".")}@speaker.invalid`, subject, html }, { eventId, runId });
+    const r = await gate(user, "email.speaker", `Invite ${sp.name} to speak at ${ev.title}`, { speaker_id: sp.id, to: sp.email, subject, html }, { eventId, runId });
     results.push({ speaker: sp.name, status: r.status, detail: r.status === "blocked" ? r.reason : r.status === "executed" ? `sent → ${String(r.result.to)}` : r.error });
   }
   return results;
@@ -451,36 +455,40 @@ export async function publishEvent(user: User, eventId: string, runId: string | 
 
 // ------------------------------------------------------------------ registration sync
 
-export async function syncRsvps(eventId: string, source: "luma" | "meetup", simulate = false) {
+/**
+ * Pull registrations from Luma or Meetup. Without that platform configured,
+ * the event uses Movents' own registration page, whose sign-ups are already
+ * in the list, so there is nothing to pull.
+ */
+export async function syncRsvps(eventId: string, source: "luma" | "meetup") {
   const { ev } = await eventContext(eventId);
   const ext = source === "luma" ? ev.luma : ev.meetup;
-  const live = (source === "luma" ? lumaMode() : meetupMode()) === "live" && ext?.id && !String(ext.id).includes("mock");
-  const guests = live
-    ? source === "luma"
-      ? await lumaGuests(String(ext!.id))
-      : await meetupGuests(String(ext!.id))
-    : mockGuests(ev.id, Math.round(ev.pax * (source === "luma" ? 0.82 : 0.24)), source, simulate ? 0.68 : 0);
-  const existing = await query<{ email: string; id: string }>("SELECT id, email FROM rsvps WHERE event_id = $1 AND source = $2", [eventId, source]);
+  const live = (source === "luma" ? lumaMode() : meetupMode()) === "live" && ext?.id && !/mock|movents/.test(String(ext.id));
+  if (!live) return { mode: "movents", fetched: 0, added: 0, updated: 0, note: `${source === "luma" ? "Luma" : "Meetup"} is not connected; registrations come from the Movents event page.` };
+  const guests = source === "luma" ? await lumaGuests(String(ext!.id)) : await meetupGuests(String(ext!.id));
+  const existing = new Map((await query<{ email: string; id: string }>("SELECT id, lower(email) AS email FROM rsvps WHERE event_id = $1 AND source = $2", [eventId, source])).map((r) => [r.email, r.id]));
   const venue = ev.venue_id ? await one<Venue>("SELECT capacity FROM venues WHERE id = $1", [ev.venue_id]) : null;
   let going = Number((await one<{ n: number }>("SELECT count(*)::int AS n FROM rsvps WHERE event_id = $1 AND status = 'going'", [eventId]))?.n ?? 0);
   let added = 0;
   let updated = 0;
-  for (const g of guests) {
-    const prev = existing.find((e) => e.email === g.email);
-    if (prev) {
-      await update("rsvps", prev.id, { checked_in: g.checked_in, checked_in_at: g.checked_in ? new Date() : null, status: g.status });
-      updated++;
-      continue;
+  await transaction(async () => {
+    for (const g of guests) {
+      const prev = existing.get(g.email.toLowerCase());
+      if (prev) {
+        await update("rsvps", prev, { checked_in: g.checked_in, checked_in_at: g.checked_in ? new Date() : null, status: g.status });
+        updated++;
+        continue;
+      }
+      const cap = venue?.capacity ?? ev.pax;
+      const status = g.status === "going" && going >= cap ? "waitlist" : g.status;
+      if (status === "going") going++;
+      await insert("rsvps", { id: id("rsv"), event_id: eventId, name: g.name, email: g.email, source, status, ticket: ticketCode(), checked_in: g.checked_in, checked_in_at: g.checked_in ? new Date() : null, dietary: g.dietary ?? null, accessibility: g.accessibility ?? null });
+      added++;
     }
-    const cap = venue?.capacity ?? ev.pax;
-    const status = g.status === "going" && going >= cap ? "waitlist" : g.status;
-    if (status === "going") going++;
-    await insert("rsvps", { id: id("rsv"), event_id: eventId, name: g.name, email: g.email, source, status, ticket: ticketCode(), checked_in: g.checked_in, checked_in_at: g.checked_in ? new Date() : null, dietary: g.dietary ?? null, accessibility: g.accessibility ?? null });
-    added++;
-  }
+  });
   const field = source === "luma" ? "luma" : "meetup";
-  await update("events", eventId, { [field]: { ...(ext ?? {}), synced_at: new Date().toISOString(), mode: live ? "live" : "mock" } });
-  return { mode: live ? "live" : "mock", fetched: guests.length, added, updated };
+  await update("events", eventId, { [field]: { ...(ext ?? {}), synced_at: new Date().toISOString(), mode: "live" } });
+  return { mode: "live", fetched: guests.length, added, updated };
 }
 
 export function ticketCode() {
@@ -488,46 +496,6 @@ export function ticketCode() {
 }
 
 // ------------------------------------------------------------------ post-event
-
-export async function simulateEventDay(eventId: string) {
-  const notes: string[] = [];
-  const rsvps = Number((await one<{ n: number }>("SELECT count(*)::int AS n FROM rsvps WHERE event_id = $1", [eventId]))?.n ?? 0);
-  const checked = Number((await one<{ n: number }>("SELECT count(*)::int AS n FROM rsvps WHERE event_id = $1 AND checked_in", [eventId]))?.n ?? 0);
-  if (rsvps === 0) {
-    await syncRsvps(eventId, "luma", true);
-    await syncRsvps(eventId, "meetup", true);
-    notes.push("No registrations found, synced simulated Luma + Meetup RSVPs with check-ins (demo data).");
-  } else if (checked === 0) {
-    await query("UPDATE rsvps SET checked_in = true, checked_in_at = now() WHERE event_id = $1 AND status = 'going' AND random() < 0.68", [eventId]);
-    notes.push("No check-ins recorded, simulated door check-ins at a 68% show rate (demo data).");
-  }
-  const lines = await query<BudgetLine>("SELECT * FROM budget_lines WHERE event_id = $1", [eventId]);
-  if (lines.length && lines.every((l) => l.actual == null)) {
-    const factors = [0.94, 1.06, 0.88, 1, 0.97, 1.12, 1];
-    for (const [i, l] of lines.entries()) await update("budget_lines", l.id, { actual: Math.round(l.estimated * factors[i % factors.length] * 100) / 100 });
-    notes.push("No actual spend entered, simulated receipts within ±12% of estimates (demo data).");
-  }
-  const fb = Number((await one<{ n: number }>("SELECT count(*)::int AS n FROM feedback WHERE event_id = $1", [eventId]))?.n ?? 0);
-  if (fb === 0) {
-    const pool: [number, number, string, string][] = [
-      [10, 5, "Speakers were insightful and engaging", "More time for Q&A please"],
-      [9, 5, "Live demo of the AI tools", "Share the slides and recording"],
-      [8, 4, "Great networking with industry", "Audio was soft at the back"],
-      [9, 5, "Practical examples I can use", "Start on time"],
-      [6, 3, "Good overview", "Too basic, wanted more advanced content"],
-      [10, 5, "Best talk this semester", "Food ran out quickly"],
-      [7, 4, "Panel discussion", "Room was crowded near the door"],
-      [9, 4, "Clear explanations", "More Q&A time"],
-    ];
-    for (let k = 0; k < 36; k++) {
-      const [n, r, liked, improve] = pool[k % pool.length];
-      await insert("feedback", { id: id("fb"), event_id: eventId, nps: n, rating: r, liked, improve });
-    }
-    notes.push("No survey responses, simulated 36 feedback responses (demo data).");
-  }
-  if (notes.length) await addFlag(eventId, "info", "Demo data: post-event attendance, receipts or survey responses were simulated.");
-  return notes;
-}
 
 export async function feedLessons(user: User, eventId: string) {
   const b = await loadBundle(eventId);

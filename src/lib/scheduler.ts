@@ -42,11 +42,12 @@ export async function runScheduler(opts: { todayOverride?: string; societyId?: s
     // 1. Speaker auto follow-up: contacted, no reply in N days.
     const speakers = await query<Speaker>("SELECT * FROM speakers WHERE event_id = $1 AND status = 'contacted' AND contacted_at IS NOT NULL", [ev.id]);
     for (const sp of speakers) {
+      if (!sp.email) continue;
       const age = daysBetween(new Date(sp.contacted_at!).toISOString().slice(0, 10), now);
       if (age < followDays) continue;
       const sender = (await one<User>("SELECT * FROM society_members WHERE society_id = $1 AND role = 'director' AND department = 'Programmes'", [ev.society_id])) ?? ({ name: "The organising committee", role: "director" } as User);
       const { subject, html } = speakerEmail(sp, ev, venue, uni?.society_name ?? "", sender, true);
-      const e = await sendEmail({ to: sp.email ?? `${sp.name.toLowerCase().replace(/[^a-z]+/g, ".")}@speaker.invalid`, subject, html, kind: "speaker_followup", eventId: ev.id, relatedId: sp.id, sentBy: "scheduler" });
+      const e = await sendEmail({ to: sp.email, subject, html, kind: "speaker_followup", eventId: ev.id, relatedId: sp.id, sentBy: "scheduler" });
       await update("speakers", sp.id, { status: "followed_up", followed_up_at: new Date() });
       await audit(SYSTEM, "speaker.followup_sent", { speaker: sp.name, days_without_reply: age, email_id: e.id, delivery: e.status }, { eventId: ev.id, approvedBy: "covered by original outreach approval" });
       log.push(`Follow-up → ${sp.name} (${age} days, ${ev.title})`);

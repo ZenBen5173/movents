@@ -47,7 +47,7 @@ export default async function NewEvent() {
                 <span className="min-w-0 flex-1">
                   <span className="line-clamp-2 text-[13px] leading-snug transition-transform group-hover:translate-x-0.5">{r.prompt}</span>
                   <span className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
-                    {r.source === "workbuddy" && <span className="rounded bg-ticket-blue px-1 text-white">WB</span>}
+                    {r.source !== "builtin" && <span className="rounded bg-ticket-blue px-1 text-white">AI</span>}
                     {r.by?.split(" ")[0]} · {ago(String(r.created_at))}
                   </span>
                 </span>

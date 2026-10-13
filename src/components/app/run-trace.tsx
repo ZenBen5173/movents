@@ -118,7 +118,7 @@ export function RunTrace({ initial }: { initial: AgentRun & { by: string | null 
   return (
     <div>
       <div className="mb-8">
-        <Eyebrow>{run.source === "workbuddy" ? "Agent run · Tencent WorkBuddy via MCP" : "Agent run · built-in executor"} · started by {run.by ?? ""}</Eyebrow>
+        <Eyebrow>{run.source !== "builtin" ? "Agent run · AI assistant via MCP" : "Agent run · built-in executor"} · started by {run.by ?? ""}</Eyebrow>
         <h1 className="mt-3 font-display text-3xl font-bold leading-tight tracking-tight md:text-[40px]">“{run.prompt}”</h1>
         <div className="mt-5 flex items-center gap-3">
           <div className="relative h-2.5 flex-1 overflow-hidden rounded-full border-[1.5px] border-ink bg-card">
