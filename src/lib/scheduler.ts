@@ -46,7 +46,7 @@ export async function runScheduler(opts: { todayOverride?: string; societyId?: s
       const age = daysBetween(new Date(sp.contacted_at!).toISOString().slice(0, 10), now);
       if (age < followDays) continue;
       const sender = (await one<User>("SELECT * FROM society_members WHERE society_id = $1 AND role = 'director' AND department = 'Programmes'", [ev.society_id])) ?? ({ name: "The organising committee", role: "director" } as User);
-      const { subject, html } = speakerEmail(sp, ev, venue, uni?.society_name ?? "", sender, true);
+      const { subject, html } = speakerEmail(sp, ev, venue, uni?.society_name ?? "", sender, true, uni?.name);
       const e = await sendEmail({ to: sp.email, subject, html, kind: "speaker_followup", eventId: ev.id, relatedId: sp.id, sentBy: "scheduler" });
       await update("speakers", sp.id, { status: "followed_up", followed_up_at: new Date() });
       await audit(SYSTEM, "speaker.followup_sent", { speaker: sp.name, days_without_reply: age, email_id: e.id, delivery: e.status }, { eventId: ev.id, approvedBy: "covered by original outreach approval" });
@@ -58,7 +58,7 @@ export async function runScheduler(opts: { todayOverride?: string; societyId?: s
     if (daysToEvent >= 0 && daysToEvent <= 7) {
       const vendors = await query<Vendor>("SELECT * FROM vendors WHERE event_id = $1 AND selected = true AND reminded_at IS NULL", [ev.id]);
       for (const v of vendors) {
-        const html = emailShell("Delivery reminder", `<p>Hello ${v.name.split(" — ")[0]} team,</p><p>A reminder that <b>${ev.title}</b> is on <b>${fmtDate(ev.date)}</b> at ${venue?.name ?? "Sunway University"}. Please confirm delivery time (by ${ev.start_time}) and final quantities.</p><p>Thank you!</p>`);
+        const html = emailShell("Delivery reminder", `<p>Hello ${v.name.split(" — ")[0]} team,</p><p>A reminder that <b>${ev.title}</b> is on <b>${fmtDate(ev.date)}</b> at ${venue?.name ?? uni?.name ?? "the venue"}. Please confirm delivery time (by ${ev.start_time}) and final quantities.</p><p>Thank you!</p>`);
         const rcpt = await vendorRecipient(v, ev.society_id);
         const to = rcpt.to;
         const e = await sendEmail({ to, subject: `${rcpt.forward ? "[Forward to vendor] " : ""}Reminder: ${ev.title} on ${fmtDate(ev.date)}`, html: rcpt.forward ? forwardNote(v.name) + html : html, kind: "vendor_reminder", eventId: ev.id, relatedId: v.id, sentBy: "scheduler" });
@@ -74,7 +74,7 @@ export async function runScheduler(opts: { todayOverride?: string; societyId?: s
     for (const stale of dueAll.slice(0, -1)) await update("reminders", stale.id, { status: "skipped" });
     const due = dueAll.slice(-1);
     for (const r of due) {
-      const html = emailShell(ev.title, `<p>${r.label === "Day of event" ? "See you today!" : `Reminder: ${ev.title} is coming up.`}</p><p><b>${fmtDate(ev.date)}</b>, ${ev.start_time} to ${ev.end_time} at ${venue?.name ?? "Sunway University"}.</p><p><a href="${appUrl()}/e/${ev.id}">Event page & your ticket</a></p>`);
+      const html = emailShell(ev.title, `<p>${r.label === "Day of event" ? "See you today!" : `Reminder: ${ev.title} is coming up.`}</p><p><b>${fmtDate(ev.date)}</b>, ${ev.start_time} to ${ev.end_time} at ${venue?.name ?? uni?.name ?? "the venue"}.</p><p><a href="${appUrl()}/e/${ev.id}">Event page & your ticket</a></p>`);
       const res = await sendToAttendees(ev, "attendee_reminder", `${r.label}: ${ev.title}`, html);
       await update("reminders", r.id, { status: res.sent ? "sent" : "skipped", sent_at: new Date() });
       await audit(SYSTEM, "attendee.reminder_sent", { label: r.label, recipients: res.sent, mode: res.mode }, { eventId: ev.id });

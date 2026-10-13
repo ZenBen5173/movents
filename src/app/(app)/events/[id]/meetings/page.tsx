@@ -1,6 +1,6 @@
 import { one, query } from "@/lib/db";
 import { listMembers } from "@/lib/members";
-import { MEETING_TEMPLATES, demoNow, listMeetings } from "@/lib/meetings";
+import { MEETING_TEMPLATES, nowKL, listMeetings } from "@/lib/meetings";
 import { MeetingsView } from "@/components/app/meetings-view";
 import { canViewEvent } from "@/lib/guard";
 
@@ -26,7 +26,7 @@ export default async function MeetingsPage({ params }: { params: Promise<{ id: s
       team={team.map((m) => ({ id: m.user_id, name: m.name, role: m.role, member_role: m.member_role }))}
       meetings={meetings}
       tasks={Object.fromEntries(tasks.map((t) => [t.id, { status: t.status, title: t.title }]))}
-      now={demoNow()}
+      now={nowKL()}
       templates={MEETING_TEMPLATES}
     />
   );

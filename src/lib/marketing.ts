@@ -34,7 +34,7 @@ function tags(c: Ctx) {
   return [`#${uni}`, `#${uni}University`, topic && `#${topic}`, topic && `#${topic}Malaysia`, "#StudentLife", "#CampusEvents", "#KLevents"].filter(Boolean).join(" ");
 }
 
-/** Channel-specific copy. Written to be posted as-is; WorkBuddy may rewrite it via update_creative_copy. */
+/** Channel-specific copy. Written to be posted as-is; an AI assistant may rewrite it via update_creative_copy. */
 export function copyFor(kind: Creative["kind"], c: Ctx) {
   const when = `${weekday(c.ev.date)}, ${fmtDate(c.ev.date)} · ${c.ev.start_time} to ${c.ev.end_time}`;
   const where = c.venue ? `${c.venue.name}, ${c.uni}` : c.uni;
@@ -80,7 +80,7 @@ function sceneFor(c: Ctx) {
   return scenes.find(([re]) => re.test(t))?.[1] ?? "an excited crowd of university students in a modern auditorium, a speaker on a lit stage, warm spotlight beams";
 }
 
-/** Prompt for an AI image model (Nano Banana / WorkBuddy ImageGen) or a video model. Real art direction, exact text. */
+/** Prompt for an AI image model (Nano Banana or the assistant's image tool) or a video model. Real art direction, exact text. */
 export function promptFor(kind: Creative["kind"], c: Ctx, w: number, h: number) {
   const where = c.venue?.name ?? c.uni;
   const look = `Style: high-end AI illustrated event key art, cinematic 3D render with rich depth, dramatic volumetric lighting, bold vibrant colours (electric blue, tomato orange and sunny yellow highlights), polished like a festival or tech-conference poster. Not flat, not a template, no plain background, no barcode, no ticket stub, no logos of real companies.`;
@@ -149,8 +149,8 @@ export async function setImage(creativeId: string, image: string, source: Creati
 export async function regenerateImage(creativeId: string) {
   const r = await one<Creative>("SELECT * FROM creatives WHERE id = $1", [creativeId]);
   if (!r) throw new Error("Creative not found");
-  if (r.kind === "video") throw new Error("Video is generated in WorkBuddy and attached back with attach_creative_media");
-  if (!nanoBananaEnabled()) throw new Error("Set GEMINI_API_KEY to generate with Nano Banana here, or let WorkBuddy generate and attach the image");
+  if (r.kind === "video") throw new Error("Generate the video with your AI assistant or another tool, then upload it here");
+  if (!nanoBananaEnabled()) throw new Error("Image generation is not set up on this server. Upload an image, or ask your AI assistant to generate and attach one.");
   return setImage(r.id, await generateImage(r.image_prompt!, r.width, r.height), "nano-banana");
 }
 

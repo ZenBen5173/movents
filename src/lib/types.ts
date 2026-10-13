@@ -49,6 +49,8 @@ export type University = {
   id: string;
   name: string;
   short_name: string;
+  latitude?: number | null;
+  longitude?: number | null;
   sop: Sop;
   created_at: string;
 };

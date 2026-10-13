@@ -1,4 +1,5 @@
 import "server-only";
+import { esc } from "./html";
 import { audit, notify } from "./audit";
 import { id, insert, one, query, update } from "./db";
 import { ACTION_LABEL, canDecide, decide } from "./rbac";
@@ -362,12 +363,17 @@ export async function icsForEvent(eventId: string) {
   ]);
 }
 
-export function speakerEmail(sp: Pick<Speaker, "name">, ev: Pick<EventRow, "title" | "date" | "start_time" | "end_time" | "topic">, venue: Pick<Venue, "name"> | null, society: string, sender: Pick<User, "name" | "role">, followUp = false) {
-  const first = sp.name.replace(/^(dr\.?|prof\.?|mr\.?|ms\.?)\s+/i, "").split(" ")[0];
+export function speakerEmail(sp: Pick<Speaker, "name">, ev: Pick<EventRow, "title" | "date" | "start_time" | "end_time" | "topic" | "pax">, venue: Pick<Venue, "name"> | null, societyName: string, sender: Pick<User, "name" | "role">, followUp = false, universityName = "") {
+  const first = esc(sp.name.replace(/^(dr\.?|prof\.?|mr\.?|ms\.?)\s+/i, "").split(" ")[0]);
+  const society = esc(societyName);
+  const at = universityName ? ` at ${esc(universityName)}` : "";
+  ev = { ...ev, title: esc(ev.title), topic: ev.topic ? esc(ev.topic) : ev.topic };
+  venue = venue ? { name: esc(venue.name) } : null;
+  sender = { ...sender, name: esc(sender.name) };
   const subject = followUp ? `Following up: speaking invitation, ${ev.title}` : `Speaking invitation, ${ev.title} (${fmtDate(ev.date)})`;
   const body = followUp
     ? `<p>Hi ${first},</p><p>Just following up on our invitation to speak at <b>${ev.title}</b> on ${fmtDate(ev.date)}. We would love to have you, even a 30-minute talk or a panel slot would mean a lot to our members.</p><p>Could you let us know by the end of the week? Happy to work around your schedule.</p><p>Warm regards,<br>${sender.name}<br>${society}</p>`
-    : `<p>Hi ${first},</p><p>I'm writing from the <b>${society}</b> at Sunway University. We're organising <b>${ev.title}</b> on <b>${fmtDate(ev.date)}</b>, ${ev.start_time} to ${ev.end_time}${venue ? ` at ${venue.name}` : ""}, for around 150 students.</p><p>Given your work on ${ev.topic ?? "this topic"}, we'd be honoured to invite you to give a 30 to 40 minute talk followed by Q&amp;A. We will cover parking and provide a token of appreciation.</p><p>Would you be available? If so, we'll send the details and the university's external speaker declaration form.</p><p>Warm regards,<br>${sender.name}<br>${society}</p>`;
+    : `<p>Hi ${first},</p><p>I'm writing from the <b>${society}</b>${at}. We're organising <b>${ev.title}</b> on <b>${fmtDate(ev.date)}</b>, ${ev.start_time} to ${ev.end_time}${venue ? ` at ${venue.name}` : ""}, for around ${ev.pax} students.</p><p>Given your work on ${ev.topic ?? "this topic"}, we'd be honoured to invite you to give a 30 to 40 minute talk followed by Q&amp;A. We will cover parking and provide a token of appreciation.</p><p>Would you be available? If so, we'll send the details and the university's external speaker declaration form.</p><p>Warm regards,<br>${sender.name}<br>${society}</p>`;
   return { subject, html: emailShell(followUp ? "Following up" : "Speaking invitation", body) };
 }
 

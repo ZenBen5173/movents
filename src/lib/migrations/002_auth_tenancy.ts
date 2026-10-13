@@ -15,6 +15,9 @@ ALTER TABLE societies ADD COLUMN IF NOT EXISTS created_by text;
 CREATE INDEX IF NOT EXISTS idx_societies_university ON societies (university_id);
 
 ALTER TABLE universities ADD COLUMN IF NOT EXISTS created_by_society text;
+ALTER TABLE universities ADD COLUMN IF NOT EXISTS latitude double precision;
+ALTER TABLE universities ADD COLUMN IF NOT EXISTS longitude double precision;
+UPDATE universities SET latitude = 3.0675, longitude = 101.6036 WHERE id = 'uni_sunway' AND latitude IS NULL;
 
 -- A user can belong to several societies; users.society_id/role/department
 -- hold the active one so existing queries keep working.
@@ -139,6 +142,14 @@ CREATE INDEX IF NOT EXISTS idx_sop_university ON sop_documents (university_id, k
 CREATE INDEX IF NOT EXISTS idx_venue_bookings ON venue_bookings (venue_id, date);
 CREATE INDEX IF NOT EXISTS idx_rsvps_ticket ON rsvps (ticket);
 CREATE INDEX IF NOT EXISTS idx_rsvps_email ON rsvps (event_id, lower(email));
+
+-- The assistant used to be one specific product; sources are now neutral.
+UPDATE speakers SET source = 'assistant' WHERE source = 'workbuddy';
+UPDATE vendors SET source = 'assistant' WHERE source = 'workbuddy';
+UPDATE sponsors SET source = 'assistant' WHERE source = 'workbuddy';
+ALTER TABLE sponsors ALTER COLUMN source SET DEFAULT 'assistant';
+UPDATE creatives SET image_source = 'assistant' WHERE image_source = 'workbuddy';
+UPDATE agent_runs SET source = 'assistant' WHERE source = 'workbuddy';
 
 -- Rows written while the json serializer double-encoded values.
 DO $$

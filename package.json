@@ -1,5 +1,5 @@
 {
-  "name": "eventpilot",
+  "name": "movents",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,8 @@
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
     "test": "tsx --conditions=react-server --test tests/*.test.ts",
-    "demo": "next build && next start -p 3000"
+    "migrate": "tsx --conditions=react-server scripts/migrate.ts",
+    "purge-demo": "tsx --conditions=react-server scripts/purge-demo.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

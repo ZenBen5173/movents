@@ -1,4 +1,5 @@
 import "server-only";
+import { esc } from "../html";
 import crypto from "node:crypto";
 import { id, insert, one, query, transaction, update } from "../db";
 import { audit } from "../audit";
@@ -187,7 +188,7 @@ export async function matchVenue(eventId: string, predicted?: number) {
 export async function researchSpeakers(eventId: string, count = 3) {
   const { ev } = await eventContext(eventId);
   const saved = await query<Speaker>("SELECT * FROM speakers WHERE event_id = $1 AND source <> 'sample'", [eventId]);
-  if (saved.length) return { mode: "workbuddy" as const, speakers: saved };
+  if (saved.length) return { mode: "assistant" as const, speakers: saved };
   await query("DELETE FROM speakers WHERE event_id = $1 AND status = 'found'", [eventId]);
   const rows: Speaker[] = [];
   for (const c of placeholderSpeakers(ev.topic ?? ev.title, count)) {
@@ -196,12 +197,12 @@ export async function researchSpeakers(eventId: string, count = 3) {
   return { mode: "placeholder" as const, speakers: rows };
 }
 
-/** WorkBuddy's web research lands here. */
+/** The AI assistant's web research lands here. */
 export async function saveSpeakers(eventId: string, list: Partial<SpeakerCandidate>[]) {
   await query("DELETE FROM speakers WHERE event_id = $1 AND source = 'sample'", [eventId]);
   const rows: Speaker[] = [];
   for (const c of list.filter((x) => x.name)) {
-    rows.push(await insert<Speaker>("speakers", { id: id("spk"), event_id: eventId, name: c.name, headline: c.headline ?? null, source_url: c.source_url ?? null, email: c.email ?? null, fit_reason: c.fit_reason ?? null, status: "found", source: "workbuddy" }));
+    rows.push(await insert<Speaker>("speakers", { id: id("spk"), event_id: eventId, name: c.name, headline: c.headline ?? null, source_url: c.source_url ?? null, email: c.email ?? null, fit_reason: c.fit_reason ?? null, status: "found", source: "assistant" }));
   }
   return rows;
 }
@@ -209,7 +210,7 @@ export async function saveSpeakers(eventId: string, list: Partial<SpeakerCandida
 export async function saveSupplierQuotes(eventId: string, list: Partial<SupplierCandidate>[]) {
   const out: Vendor[] = [];
   for (const c of list.filter((x) => x.name && x.category && x.unit_price != null)) {
-    out.push(await insert<Vendor>("vendors", { id: id("vnd"), event_id: eventId, category: c.category, name: c.name, url: c.url ?? null, unit: c.unit ?? "unit", unit_price: Number(c.unit_price), quote: null, rating: null, snippet: c.snippet ?? null, source: "workbuddy", contract_status: "quoted" }));
+    out.push(await insert<Vendor>("vendors", { id: id("vnd"), event_id: eventId, category: c.category, name: c.name, url: c.url ?? null, unit: c.unit ?? "unit", unit_price: Number(c.unit_price), quote: null, rating: null, snippet: c.snippet ?? null, source: "assistant", contract_status: "quoted" }));
   }
   return out;
 }
@@ -217,12 +218,12 @@ export async function saveSupplierQuotes(eventId: string, list: Partial<Supplier
 export async function researchSuppliers(eventId: string) {
   const out: Record<string, Vendor[]> = {};
   const modes: Record<string, string> = {};
-  await query("DELETE FROM vendors WHERE event_id = $1 AND selected = false AND source <> 'workbuddy'", [eventId]);
+  await query("DELETE FROM vendors WHERE event_id = $1 AND selected = false AND source <> 'assistant'", [eventId]);
   const registry = await query<Vendor>("SELECT * FROM vendors WHERE event_id IS NULL");
-  const fromWorkBuddy = await query<Vendor>("SELECT * FROM vendors WHERE event_id = $1 AND source = 'workbuddy'", [eventId]);
+  const fromAssistant = await query<Vendor>("SELECT * FROM vendors WHERE event_id = $1 AND source = 'assistant'", [eventId]);
   for (const cat of SUPPLIER_CATEGORIES) {
-    const live = fromWorkBuddy.filter((v) => v.category === cat.key);
-    modes[cat.key] = live.length ? "workbuddy" : "reference";
+    const live = fromAssistant.filter((v) => v.category === cat.key);
+    modes[cat.key] = live.length ? "assistant" : "reference";
     out[cat.key] = [...live];
     if (live.length >= 2) continue;
     for (const c of referenceSuppliers(cat.key)) {
@@ -300,10 +301,10 @@ export async function draftBudget(eventId: string, signals: LessonSignals) {
 // ------------------------------------------------------------------ risks + ops pack
 
 export async function generateRisks(eventId: string) {
-  const { ev } = await eventContext(eventId);
+  const { ev, uni } = await eventContext(eventId);
   const venue = ev.venue_id ? await one<Venue>("SELECT * FROM venues WHERE id = $1", [ev.venue_id]) : null;
   const pick = await ownerPicker(eventId, ev.society_id);
-  const weather = await weatherFor(ev.date, today());
+  const weather = await weatherFor(ev.date, today(), uni.latitude != null && uni.longitude != null ? { lat: uni.latitude, lon: uni.longitude } : null);
   const foodLine = await one<BudgetLine>("SELECT * FROM budget_lines WHERE event_id = $1 AND category = 'Food & beverage'", [eventId]);
   const speakers = await query<Speaker>("SELECT id FROM speakers WHERE event_id = $1", [eventId]);
   const risks = draftRisks({ pax: ev.pax, venueName: venue?.name ?? "indoor venue", month: Number(ev.date.slice(5, 7)) - 1, outdoor: false, hasExternalSpeakers: speakers.length > 0, weatherNote: weather.note, foodPax: foodLine?.qty ?? ev.pax });
@@ -393,7 +394,7 @@ export async function outreachSpeakers(user: User, eventId: string, runId: strin
       results.push({ speaker: sp.name, status: "failed", detail: "No email on file. Add one on the Speakers page, then send again." });
       continue;
     }
-    const { subject, html } = speakerEmail(sp, ev, venue, uni.society_name, user);
+    const { subject, html } = speakerEmail(sp, ev, venue, uni.society_name, user, false, uni.name);
     const r = await gate(user, "email.speaker", `Invite ${sp.name} to speak at ${ev.title}`, { speaker_id: sp.id, to: sp.email, subject, html }, { eventId, runId });
     results.push({ speaker: sp.name, status: r.status, detail: r.status === "blocked" ? r.reason : r.status === "executed" ? `sent → ${String(r.result.to)}` : r.error });
   }
@@ -409,7 +410,7 @@ export async function requestVendorQuotes(user: User, eventId: string, runId: st
     const l = lines.find((x) => x.vendor_id === v.id);
     const html = emailShell(
       "Quotation request",
-      `<p>Hello ${v.name.split(" — ")[0]} team,</p><p>The ${uni.society_name} (Sunway University) would like a written quotation for <b>${l?.qty ?? ""} ${v.unit ?? "units"}</b> (${l?.description ?? v.category}) for <b>${ev.title}</b> on ${fmtDate(ev.date)}.</p><p>Your listed price is about ${fmtRM(v.unit_price)} per ${v.unit}. Please confirm availability, final price, deposit terms and delivery.</p><p>Thank you,<br>${user.name}</p>`,
+      `<p>Hello ${v.name.split(" — ")[0]} team,</p><p>The ${esc(uni.society_name)} (${esc(uni.name)}) would like a written quotation for <b>${l?.qty ?? ""} ${v.unit ?? "units"}</b> (${l?.description ?? v.category}) for <b>${ev.title}</b> on ${fmtDate(ev.date)}.</p><p>Your listed price is about ${fmtRM(v.unit_price)} per ${v.unit}. Please confirm availability, final price, deposit terms and delivery.</p><p>Thank you,<br>${user.name}</p>`,
     );
     const rcpt = await vendorRecipient(v, ev.society_id);
     const to = rcpt.to;

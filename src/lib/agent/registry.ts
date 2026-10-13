@@ -261,7 +261,7 @@ const ALL_TOOLS: Tool[] = [
       const M = await import("../meetings");
       const eventId = String(a.event_id);
       const [all, names] = await Promise.all([M.listMeetings(eventId), M.teamNames(eventId)]);
-      const now = M.demoNow();
+      const now = M.nowKL();
       const pick = all.filter((m) => (a.when === "upcoming" ? !M.isPast(m, now) : a.when === "past" ? M.isPast(m, now) : true));
       return pick.map((m) => ({
         meeting_id: m.id,

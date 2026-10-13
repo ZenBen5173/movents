@@ -1,8 +1,8 @@
 import "server-only";
 
-// Open-Meteo: free, no API key. Sunway University coordinates by default.
-const LAT = Number(process.env.VENUE_LAT ?? 3.0675);
-const LON = Number(process.env.VENUE_LON ?? 101.6036);
+// Open-Meteo: free, no API key. Uses the university's coordinates; VENUE_LAT /
+// VENUE_LON (or Kuala Lumpur) when it has none.
+const FALLBACK = { lat: Number(process.env.VENUE_LAT ?? 3.139), lon: Number(process.env.VENUE_LON ?? 101.6869) };
 
 export type WeatherNote = { mode: "forecast" | "history" | "unavailable"; note: string; rainChance?: number; source: string };
 
@@ -12,7 +12,8 @@ function shift(date: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-export async function weatherFor(date: string, todayIso: string): Promise<WeatherNote> {
+export async function weatherFor(date: string, todayIso: string, at: { lat: number; lon: number } | null = null): Promise<WeatherNote> {
+  const { lat: LAT, lon: LON } = at ?? FALLBACK;
   const daysAway = Math.round((Date.parse(date) - Date.parse(todayIso)) / 86_400_000);
   try {
     if (daysAway >= 0 && daysAway <= 15) {

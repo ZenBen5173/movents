@@ -37,7 +37,7 @@ export const VENUE_PHOTOS: Record<string, string> = {
 };
 
 export async function seedReference(q: Q) {
-  await ins(q, "universities", { id: UNI, name: "Sunway University", short_name: "Sunway", sop: SUNWAY_SOP });
+  await ins(q, "universities", { id: UNI, name: "Sunway University", short_name: "Sunway", sop: SUNWAY_SOP, latitude: 3.0675, longitude: 101.6036 });
   await ins(q, "sop_documents", {
     id: "sop_sunway_main",
     university_id: UNI,
