@@ -31,7 +31,7 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
     const ours = e.society_id === user.society_id;
     const clash = events.some((b) => b.id !== e.id && b.date === e.date && overlaps(b, e));
     // Other societies' bookings show as busy time, not their event names.
-    bookings.push({ id: e.id, title: ours ? e.title : "Booked", holder: e.society, kind: ours ? "ours" : "society", date: e.date, start: e.start_time, end: e.end_time, clash, href: ours && (await isMember(user, e.id)) ? `/events/${e.id}` : undefined });
+    bookings.push({ id: ours ? e.id : `busy_${bookings.length}`, title: ours ? e.title : "Booked", holder: e.society, kind: ours ? "ours" : "society", date: e.date, start: e.start_time, end: e.end_time, clash, href: ours && (await isMember(user, e.id)) ? `/events/${e.id}` : undefined });
   }
   for (const b of other) bookings.push({ id: b.id, title: b.title, holder: b.holder, kind: (b.kind as Booking["kind"]) ?? "society", date: b.date, start: b.start_time, end: b.end_time });
   const facts: [string, React.ReactNode, string][] = [

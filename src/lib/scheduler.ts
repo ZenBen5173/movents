@@ -1,4 +1,5 @@
 import "server-only";
+import { esc } from "./html";
 import { one, query, update } from "./db";
 import { audit, notify } from "./audit";
 import { addDays, appUrl, daysBetween, fmtDate, fmtRM, today } from "./appurl";
@@ -58,7 +59,7 @@ export async function runScheduler(opts: { todayOverride?: string; societyId?: s
     if (daysToEvent >= 0 && daysToEvent <= 7) {
       const vendors = await query<Vendor>("SELECT * FROM vendors WHERE event_id = $1 AND selected = true AND reminded_at IS NULL", [ev.id]);
       for (const v of vendors) {
-        const html = emailShell("Delivery reminder", `<p>Hello ${v.name.split(" — ")[0]} team,</p><p>A reminder that <b>${ev.title}</b> is on <b>${fmtDate(ev.date)}</b> at ${venue?.name ?? uni?.name ?? "the venue"}. Please confirm delivery time (by ${ev.start_time}) and final quantities.</p><p>Thank you!</p>`);
+        const html = emailShell("Delivery reminder", `<p>Hello ${esc(v.name.split(" — ")[0])} team,</p><p>A reminder that <b>${esc(ev.title)}</b> is on <b>${fmtDate(ev.date)}</b> at ${esc(venue?.name ?? uni?.name ?? "the venue")}. Please confirm delivery time (by ${esc(ev.start_time)}) and final quantities.</p><p>Thank you!</p>`);
         const rcpt = await vendorRecipient(v, ev.society_id);
         const to = rcpt.to;
         const e = await sendEmail({ to, subject: `${rcpt.forward ? "[Forward to vendor] " : ""}Reminder: ${ev.title} on ${fmtDate(ev.date)}`, html: rcpt.forward ? forwardNote(v.name) + html : html, kind: "vendor_reminder", eventId: ev.id, relatedId: v.id, sentBy: "scheduler" });
@@ -74,7 +75,7 @@ export async function runScheduler(opts: { todayOverride?: string; societyId?: s
     for (const stale of dueAll.slice(0, -1)) await update("reminders", stale.id, { status: "skipped" });
     const due = dueAll.slice(-1);
     for (const r of due) {
-      const html = emailShell(ev.title, `<p>${r.label === "Day of event" ? "See you today!" : `Reminder: ${ev.title} is coming up.`}</p><p><b>${fmtDate(ev.date)}</b>, ${ev.start_time} to ${ev.end_time} at ${venue?.name ?? uni?.name ?? "the venue"}.</p><p><a href="${appUrl()}/e/${ev.id}">Event page & your ticket</a></p>`);
+      const html = emailShell(ev.title, `<p>${r.label === "Day of event" ? "See you today!" : `Reminder: ${esc(ev.title)} is coming up.`}</p><p><b>${fmtDate(ev.date)}</b>, ${esc(ev.start_time)} to ${esc(ev.end_time)} at ${esc(venue?.name ?? uni?.name ?? "the venue")}.</p><p><a href="${appUrl()}/e/${ev.id}">Event page & your ticket</a></p>`);
       const res = await sendToAttendees(ev, "attendee_reminder", `${r.label}: ${ev.title}`, html);
       await update("reminders", r.id, { status: res.sent ? "sent" : "skipped", sent_at: new Date() });
       await audit(SYSTEM, "attendee.reminder_sent", { label: r.label, recipients: res.sent, mode: res.mode }, { eventId: ev.id });
@@ -95,7 +96,7 @@ export async function runScheduler(opts: { todayOverride?: string; societyId?: s
 
     // 5. Feedback survey the day after.
     if (addDays(ev.date, 1) === now) {
-      const html = emailShell("How was it?", `<p>Thanks for coming to <b>${ev.title}</b>! Two minutes of feedback helps us improve.</p><p><a href="${appUrl()}/f/${ev.id}">Take the survey</a></p>`);
+      const html = emailShell("How was it?", `<p>Thanks for coming to <b>${esc(ev.title)}</b>! Two minutes of feedback helps us improve.</p><p><a href="${appUrl()}/f/${ev.id}">Take the survey</a></p>`);
       const res = await sendToAttendees(ev, "feedback_survey", `Feedback: ${ev.title}`, html);
       if (!res.sent) continue;
       await audit(SYSTEM, "feedback.survey_sent", { recipients: res.sent, mode: res.mode }, { eventId: ev.id });

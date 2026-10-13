@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
 import { CalendarDays, Clock, MapPin, Users } from "lucide-react";
 import { one, query } from "@/lib/db";
+import { currentUser } from "@/lib/session";
+import { isMember } from "@/lib/members";
+import { isPublished } from "@/lib/public-events";
 import { fmtDate } from "@/lib/appurl";
 import type { EventRow, Venue } from "@/lib/types";
 import { RsvpForm } from "./rsvp-form";
@@ -22,6 +25,10 @@ export default async function PublicEvent({ params, searchParams }: { params: Pr
     [id],
   );
   if (!ev) notFound();
+  if (!isPublished(ev)) {
+    const user = await currentUser();
+    if (!user || !(await isMember(user, id))) notFound();
+  }
   const venue = ev.venue_id ? await one<Venue>("SELECT * FROM venues WHERE id = $1", [ev.venue_id]) : null;
   const going = Number((await one<{ n: number }>("SELECT count(*)::int AS n FROM rsvps WHERE event_id = $1 AND status = 'going'", [id]))?.n ?? 0);
   const speakers = await query<{ name: string; headline: string | null }>("SELECT name, headline FROM speakers WHERE event_id = $1 AND status = 'confirmed'", [id]);

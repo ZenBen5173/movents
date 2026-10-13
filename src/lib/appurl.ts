@@ -42,7 +42,7 @@ export function verifyToken(value: string, token: string | null | undefined) {
 
 /** A generated document link that works without signing in (for the faculty advisor). */
 export function outputsUrl(eventId: string, file: string, ttlDays = 60) {
-  return `${appUrl()}/api/outputs/${eventId}/${file}?t=${signToken(`outputs:${eventId}`, ttlDays)}`;
+  return `${appUrl()}/api/outputs/${eventId}/${file}?t=${signToken(`outputs:${eventId}:${file}`, ttlDays)}`;
 }
 
 export const fmtRM = (n: number | null | undefined) =>

@@ -1,6 +1,6 @@
 import { pageUser } from "@/lib/guard";
 import { one, query } from "@/lib/db";
-import { canManageSop } from "@/lib/rbac";
+import { canManageUniversity } from "@/lib/universities";
 import { SopView } from "@/components/app/sop-view";
 import type { University } from "@/lib/types";
 
@@ -14,6 +14,5 @@ export default async function UniversitySop({ params }: { params: Promise<{ id: 
     "SELECT d.*, u.name AS by FROM sop_documents d LEFT JOIN users u ON u.id = d.uploaded_by WHERE d.university_id = $1 ORDER BY d.created_at DESC",
     [id],
   );
-  const ours = await one("SELECT 1 FROM societies WHERE id = $1 AND university_id = $2", [user.society_id, id]);
-  return <SopView university={JSON.parse(JSON.stringify(uni))} docs={docs.map((d) => ({ ...d, created_at: new Date(d.created_at).toISOString() }))} canEdit={Boolean(ours) && canManageSop(user)} />;
+  return <SopView university={JSON.parse(JSON.stringify(uni))} docs={docs.map((d) => ({ ...d, created_at: new Date(d.created_at).toISOString() }))} canEdit={await canManageUniversity(user, id)} />;
 }

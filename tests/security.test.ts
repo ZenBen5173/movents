@@ -75,3 +75,17 @@ test("OAuth: code needs the right PKCE verifier, works once, refresh rotates", a
   assert.notEqual(t2.access_token, t.access_token);
   await assert.rejects(O.refreshTokens({ refresh_token: t.refresh_token, client_id: c.client_id }), /Invalid or expired/);
 });
+
+test("media fetch refuses private and internal addresses", async () => {
+  const { fetchMedia } = await import("../src/lib/media");
+  await assert.rejects(fetchMedia("https://127.0.0.1/x.png"), /private/);
+  await assert.rejects(fetchMedia("https://[::1]/x.png"), /private/);
+  await assert.rejects(fetchMedia("https://localhost/x.png"), /private/);
+  await assert.rejects(fetchMedia("http://example.com/x.png"), /https/);
+});
+
+test("sign-in redirect refuses control-character tricks", () => {
+  assert.equal(safeNext("/\t/evil.com"), "/");
+  assert.equal(safeNext("/\n/evil.com"), "/");
+  assert.equal(safeNext("/events?x=1#y"), "/events?x=1#y");
+});

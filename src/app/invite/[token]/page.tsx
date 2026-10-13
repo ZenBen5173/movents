@@ -11,9 +11,9 @@ export const metadata = { title: "Invitation" };
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const [inv, user] = await Promise.all([inviteByToken(decodeURIComponent(token)), currentUser()]);
+  const [inv, user] = await Promise.all([inviteByToken(token), currentUser()]);
   const valid = inv && !inv.expired && !inv.used;
-  const next = `/invite/${encodeURIComponent(decodeURIComponent(token))}`;
+  const next = `/invite/${encodeURIComponent(token)}`;
   return (
     <main className="grid min-h-dvh place-items-center bg-background px-4 py-12">
       <div className="w-full max-w-sm">
@@ -37,7 +37,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
               </p>
             ) : (
               <form action={acceptInviteTokenAction} className="mt-6">
-                <input type="hidden" name="token" value={decodeURIComponent(token)} />
+                <input type="hidden" name="token" value={token} />
                 <Button type="submit" className="h-11 w-full">Accept and join</Button>
               </form>
             )}

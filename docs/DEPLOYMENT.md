@@ -18,6 +18,10 @@ DATABASE_URL=... npm run migrate
 A new database gets reference data: Sunway University's SOP template, venues and a supplier registry with public
 list prices. Other universities are added from **Universities → Add university** with their SOP.
 
+A university's SOP applies to every society there, so it can only be changed by the President/VP of the society
+that added the university, or by a platform admin (`PLATFORM_ADMIN_EMAILS`). Reference universities (like Sunway)
+are maintained by platform admins.
+
 **Upgrading the hackathon deployment:** the first run migrates existing data (memberships, hashed API keys, repaired
 JSON). Then remove the old demo societies, people and events:
 
@@ -37,6 +41,7 @@ DATABASE_URL=... npm run purge-demo -- --yes # delete
 | Email provider | yes | One of: `RESEND_API_KEY` + `RESEND_FROM`, `SMTP_*`, or `GRAPH_*` (Outlook). Needed for sign-in links and invites |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | optional | "Continue with Google" |
 | `DATABASE_POOL_MAX` | optional | Connections per instance (default 3) |
+| `PLATFORM_ADMIN_EMAILS` | optional | Operators who may maintain any university's SOP, templates and supplier registry |
 | Integrations | optional | `LUMA_API_KEY`, `MEETUP_*`, `STRIPE_*`, `GOOGLE_*` (calendar), `GEMINI_API_KEY` (images) |
 
 See `.env.example` for the full list.
@@ -68,6 +73,8 @@ Sign-in links and invites are sent through the configured provider. With Resend,
 
 ## Operations
 
+- **Rate limits** use the client IP from `x-real-ip` / `x-forwarded-for`. Vercel sets these; behind your own proxy,
+  make sure it overwrites them.
 - **Backups:** use your database provider's point-in-time recovery.
 - **Rotating `APP_SECRET`:** invalidates outstanding faculty, upload and document links (they can be re-sent).
   Sessions and API tokens are unaffected.

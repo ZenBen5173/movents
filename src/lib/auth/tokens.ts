@@ -16,8 +16,19 @@ export function safeEqual(a: string, b: string) {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
-/** Only allow same-site relative redirects after sign-in. */
+/**
+ * Only same-site paths after sign-in. Control characters and backslashes are
+ * refused outright (browsers strip tabs/newlines, turning "/\t/evil.com" into
+ * "//evil.com"), then the path is resolved and must stay on this origin.
+ */
 export function safeNext(next: unknown, fallback = "/") {
-  if (typeof next !== "string" || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return fallback;
-  return next;
+  if (typeof next !== "string" || !next.startsWith("/") || /[\u0000-\u001f\u007f\\]/.test(next)) return fallback;
+  try {
+    const base = "https://movents.invalid";
+    const u = new URL(next, base);
+    if (u.origin !== base) return fallback;
+    return u.pathname + u.search + u.hash;
+  } catch {
+    return fallback;
+  }
 }

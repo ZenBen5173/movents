@@ -14,12 +14,24 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * Users columns with the active society, role and department taken from the
+ * live membership row: if the membership is gone, so is the access, whatever
+ * users.society_id still says.
+ */
+const USER_COLS = `u.id, u.name, u.email, u.phone, u.email_verified_at, u.avatar_url,
+  CASE WHEN m.user_id IS NULL THEN NULL ELSE u.society_id END AS society_id,
+  coalesce(m.role, 'committee') AS role, m.department AS department`;
+const MEMBERSHIP_JOIN = "LEFT JOIN memberships m ON m.user_id = u.id AND m.society_id = u.society_id";
+
 /** A user who has picked (or been given) a society workspace. */
 export type WorkspaceUser = User & { society_id: string };
 
 /**
  * The signed-in user: a browser session cookie, or `Authorization: Bearer`
  * with a personal API token or OAuth access token (MCP and API clients).
+ * The middleware strips Authorization everywhere except the API routes
+ * meant for tokens, so a token cannot drive pages or server actions.
  * Memoised per request.
  */
 export const currentUser = cache(async (): Promise<User | null> => {
@@ -30,7 +42,7 @@ export const currentUser = cache(async (): Promise<User | null> => {
   if (!token) return null;
   const hash = hashToken(token);
   const row = await one<User & { _last_seen: string }>(
-    `SELECT u.*, s.last_seen_at AS _last_seen FROM sessions s JOIN users u ON u.id = s.user_id
+    `SELECT ${USER_COLS}, s.last_seen_at AS _last_seen FROM sessions s JOIN users u ON u.id = s.user_id ${MEMBERSHIP_JOIN}
      WHERE s.token_hash = $1 AND s.expires_at > now()`,
     [hash],
   );
@@ -49,14 +61,14 @@ export async function userForBearer(token: string): Promise<User | null> {
   const hash = hashToken(token);
   if (token.startsWith("mvo_")) {
     const u = await one<User>(
-      `SELECT u.* FROM oauth_tokens t JOIN users u ON u.id = t.user_id
+      `SELECT ${USER_COLS} FROM oauth_tokens t JOIN users u ON u.id = t.user_id ${MEMBERSHIP_JOIN}
        WHERE t.access_hash = $1 AND t.access_expires_at > now() AND t.revoked_at IS NULL`,
       [hash],
     );
     return u;
   }
   const u = await one<User & { _tok: string; _used: string | null }>(
-    `SELECT u.*, t.id AS _tok, t.last_used_at AS _used FROM api_tokens t JOIN users u ON u.id = t.user_id
+    `SELECT ${USER_COLS}, t.id AS _tok, t.last_used_at AS _used FROM api_tokens t JOIN users u ON u.id = t.user_id ${MEMBERSHIP_JOIN}
      WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > now())`,
     [hash],
   );

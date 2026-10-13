@@ -11,7 +11,13 @@ import { authorizeParamError, checkAuthorizeRequest, issueCode } from "@/lib/oau
  */
 export async function POST(req: Request) {
   const origin = req.headers.get("origin");
-  if (origin && new URL(origin).host !== new URL(appUrl()).host && new URL(origin).host !== req.headers.get("host")) {
+  let host: string | null = null;
+  try {
+    host = origin ? new URL(origin).host : null;
+  } catch {
+    host = "invalid";
+  }
+  if (origin && host !== new URL(appUrl()).host && host !== req.headers.get("host")) {
     return NextResponse.json({ error: "Cross-site request blocked" }, { status: 403 });
   }
   const p = Object.fromEntries((await req.formData()).entries()) as Record<string, string>;

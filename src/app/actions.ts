@@ -15,6 +15,8 @@ import { SUNWAY_SOP } from "@/lib/sop-default";
 import { paymentsMode, retrieveCheckout } from "@/lib/integrations/payments";
 import { forwardNote, vendorRecipient } from "@/lib/vendor-contact";
 import { publicError } from "@/lib/errors";
+import { canEditRegistryVendor, canManageUniversity } from "@/lib/universities";
+import { PUBLISHED_SQL } from "@/lib/public-events";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
 import type { EventRow, Rsvp, Sop, User, Vendor, Venue } from "@/lib/types";
 
@@ -30,12 +32,18 @@ async function onEvent(eventId: string | null | undefined) {
   return user;
 }
 
-/** The user's society belongs to this university. Admin = President/VP of it. */
+/**
+ * `admin`: may change the university's SOP, templates and rules (see
+ * canManageUniversity). Otherwise: the user's society is at this university.
+ */
 async function inUniversity(universityId: string, admin = false) {
   const user = await requireUser();
+  if (admin) {
+    if (!(await canManageUniversity(user, universityId))) throw new Error("This university's SOP is maintained by the society that added it. Ask them, or contact support.");
+    return user;
+  }
   const ok = await one("SELECT 1 FROM societies WHERE id = $1 AND university_id = $2", [user.society_id, universityId]);
   if (!ok) throw new Error("You can only change your own university's records");
-  if (admin && !canManageSop(user)) throw new Error("Only the President/VP can change this");
   return user;
 }
 
@@ -44,7 +52,12 @@ const str = (v: unknown, max = 500) => String(v ?? "").trim().slice(0, max);
 /** http(s) links only; anything else (javascript:, data:) is dropped. */
 const safeUrl = (v: unknown) => {
   const s = str(v, 2000);
-  return /^https?:\/\//i.test(s) ? s : null;
+  try {
+    const u = new URL(s);
+    return (u.protocol === "https:" || u.protocol === "http:") && u.hostname.includes(".") ? u.toString() : null;
+  } catch {
+    return null;
+  }
 };
 
 type Res = { ok: true; message?: string; data?: unknown } | { ok: false; error: string };
@@ -246,8 +259,9 @@ async function canEditVendor(vendorId: string) {
   const v = await one<Vendor & { university_id: string | null }>("SELECT * FROM vendors WHERE id = $1", [vendorId]);
   if (!v) throw new Error("Vendor not found");
   if (v.event_id) return { user: await onTeam("vendors", vendorId), v };
-  if (!v.university_id) throw new Error("This supplier can't be edited");
-  return { user: await inUniversity(v.university_id), v };
+  const user = await requireUser();
+  if (!(await canEditRegistryVendor(user, v))) throw new Error("Only the society that added this supplier can change it");
+  return { user, v };
 }
 
 export async function vendorUpdate(vendorId: string, data: Partial<Pick<Vendor, "rating" | "contract_status" | "contact_email" | "quote" | "name" | "category" | "unit_price" | "unit" | "url">>) {
@@ -272,7 +286,7 @@ export async function addVendor(data: { category: string; name: string; url: str
     const name = str(data.name, 160);
     if (!name) throw new Error("Supplier name is required");
     await insert("vendors", {
-      id: id("vnd"), event_id: null, university_id: universityId, category: str(data.category, 40) || "other", name, url: safeUrl(data.url),
+      id: id("vnd"), event_id: null, university_id: universityId, added_by_society: user.society_id, category: str(data.category, 40) || "other", name, url: safeUrl(data.url),
       unit_price: Number(data.unit_price) || 0, unit: str(data.unit, 20) || "unit", contact_email: str(data.contact_email, 254) || null,
       rating: data.rating == null ? null : Number(data.rating) || null, source: "registry", contract_status: "none",
     });
@@ -442,7 +456,7 @@ export async function registerRsvp(eventId: string, data: { name: string; email:
     const email = str(data?.email, 254).toLowerCase();
     if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Name and a valid email are required");
     await rateLimit(`rsvp:${await clientIp()}`, 30, 3600);
-    const ev = await one<EventRow>("SELECT * FROM events WHERE id = $1 AND status <> 'completed'", [eventId]);
+    const ev = await one<EventRow>(`SELECT * FROM events e WHERE e.id = $1 AND e.status <> 'completed' AND ${PUBLISHED_SQL}`, [eventId]);
     if (!ev) throw new Error("Registration for this event is closed");
     // Never reveal an existing registration (ticket, dietary needs) to whoever types the email.
     const existing = await one<Rsvp>("SELECT id FROM rsvps WHERE event_id = $1 AND lower(email) = $2", [eventId, email]);
@@ -462,7 +476,7 @@ export async function submitFeedback(eventId: string, data: { name: string; nps:
     const rating = Math.round(Number(data?.rating));
     if (!(nps >= 0 && nps <= 10 && rating >= 1 && rating <= 5)) throw new Error("Please answer both scores");
     await rateLimit(`feedback:${await clientIp()}`, 20, 3600);
-    const ev = await one("SELECT 1 FROM events WHERE id = $1", [eventId]);
+    const ev = await one(`SELECT 1 FROM events e WHERE e.id = $1 AND ${PUBLISHED_SQL}`, [eventId]);
     if (!ev) throw new Error("Event not found");
     await insert("feedback", { id: id("fb"), event_id: eventId, name: str(data.name, 120) || null, nps, rating, liked: str(data.liked, 2000) || null, improve: str(data.improve, 2000) || null });
     return "Thanks for your feedback!";
@@ -712,10 +726,13 @@ export async function deleteVendors(ids: string[]) {
     const user = await requireUser();
     if (!canManageSop(user)) throw new Error("Only the President/VP can remove registry suppliers");
     const list = (Array.isArray(ids) ? ids : []).map(String).slice(0, 500);
-    const gone = await query(
-      "DELETE FROM vendors WHERE id = ANY($1::text[]) AND event_id IS NULL AND university_id = (SELECT university_id FROM societies WHERE id = $2) RETURNING id",
-      [list, user.society_id],
+    const rows = await query<{ id: string; university_id: string | null; added_by_society: string | null }>(
+      "SELECT id, university_id, added_by_society FROM vendors WHERE id = ANY($1::text[]) AND event_id IS NULL",
+      [list],
     );
+    const allowed: string[] = [];
+    for (const r of rows) if (await canEditRegistryVendor(user, r)) allowed.push(r.id);
+    const gone = allowed.length ? await query("DELETE FROM vendors WHERE id = ANY($1::text[]) RETURNING id", [allowed]) : [];
     await audit(user, "vendor.removed", { count: gone.length });
     return `Removed ${gone.length} vendor(s)`;
   }, ["/universities"]);

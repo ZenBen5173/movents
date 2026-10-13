@@ -25,7 +25,8 @@ const TYPES: Record<string, string> = {
  */
 export async function GET(req: Request, { params }: { params: Promise<{ eventId: string; file: string }> }) {
   const { eventId, file } = await params;
-  const signed = verifyToken(`outputs:${eventId}`, new URL(req.url).searchParams.get("t"));
+  // A signed link opens exactly the file it was made for.
+  const signed = verifyToken(`outputs:${eventId}:${file}`, new URL(req.url).searchParams.get("t"));
   if (!signed) {
     const user = await currentUser();
     if (!user || !(await isMember(user, eventId))) return NextResponse.json({ error: "Not found" }, { status: 404 });

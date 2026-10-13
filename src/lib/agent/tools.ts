@@ -219,7 +219,19 @@ export async function researchSuppliers(eventId: string) {
   const out: Record<string, Vendor[]> = {};
   const modes: Record<string, string> = {};
   await query("DELETE FROM vendors WHERE event_id = $1 AND selected = false AND source <> 'assistant'", [eventId]);
-  const registry = await query<Vendor>("SELECT * FROM vendors WHERE event_id IS NULL");
+  // Ratings come from the registry of this event's own university only.
+  const registry = await query<Vendor>(
+    `SELECT v.* FROM vendors v WHERE v.event_id IS NULL AND v.university_id =
+       (SELECT s.university_id FROM events e JOIN societies s ON s.id = e.society_id WHERE e.id = $1)`,
+    [eventId],
+  );
+  const host = (u: string | null | undefined) => {
+    try {
+      return u ? new URL(u).hostname : null;
+    } catch {
+      return null;
+    }
+  };
   const fromAssistant = await query<Vendor>("SELECT * FROM vendors WHERE event_id = $1 AND source = 'assistant'", [eventId]);
   for (const cat of SUPPLIER_CATEGORIES) {
     const live = fromAssistant.filter((v) => v.category === cat.key);
@@ -228,7 +240,7 @@ export async function researchSuppliers(eventId: string) {
     if (live.length >= 2) continue;
     for (const c of referenceSuppliers(cat.key)) {
       // Society's own rating from the vendor registry, when we have used them before.
-      const known = registry.find((v) => v.name === c.name || (v.url && c.url && new URL(v.url).hostname === new URL(c.url).hostname && v.category === c.category));
+      const known = registry.find((v) => v.name === c.name || (host(v.url) && host(v.url) === host(c.url) && v.category === c.category));
       out[cat.key].push(
         await insert<Vendor>("vendors", {
           id: id("vnd"),
@@ -410,7 +422,7 @@ export async function requestVendorQuotes(user: User, eventId: string, runId: st
     const l = lines.find((x) => x.vendor_id === v.id);
     const html = emailShell(
       "Quotation request",
-      `<p>Hello ${v.name.split(" — ")[0]} team,</p><p>The ${esc(uni.society_name)} (${esc(uni.name)}) would like a written quotation for <b>${l?.qty ?? ""} ${v.unit ?? "units"}</b> (${l?.description ?? v.category}) for <b>${ev.title}</b> on ${fmtDate(ev.date)}.</p><p>Your listed price is about ${fmtRM(v.unit_price)} per ${v.unit}. Please confirm availability, final price, deposit terms and delivery.</p><p>Thank you,<br>${user.name}</p>`,
+      `<p>Hello ${esc(v.name.split(" — ")[0])} team,</p><p>The ${esc(uni.society_name)} (${esc(uni.name)}) would like a written quotation for <b>${esc(l?.qty ?? "")} ${esc(v.unit ?? "units")}</b> (${esc(l?.description ?? v.category)}) for <b>${esc(ev.title)}</b> on ${fmtDate(ev.date)}.</p><p>Your listed price is about ${fmtRM(v.unit_price)} per ${esc(v.unit)}. Please confirm availability, final price, deposit terms and delivery.</p><p>Thank you,<br>${esc(user.name)}</p>`,
     );
     const rcpt = await vendorRecipient(v, ev.society_id);
     const to = rcpt.to;
@@ -431,7 +443,7 @@ export async function submitToFaculty(user: User, eventId: string, runId: string
   const { ev, uni } = await eventContext(eventId);
   const faculty = await one<User>("SELECT * FROM society_members WHERE society_id = $1 AND role = 'faculty_advisor'", [ev.society_id]);
   const venue = ev.venue_id ? await one<Venue>("SELECT * FROM venues WHERE id = $1", [ev.venue_id]) : null;
-  const html = `<p>Dear ${faculty?.name ?? "Advisor"},</p><p>The ${uni.society_name} submits the proposal for <b>${ev.title}</b> on <b>${fmtDate(ev.date)}</b> (${ev.start_time} to ${ev.end_time}) at ${venue?.name ?? "TBC"} for ${ev.pax} participants, budget cap ${fmtRM(ev.budget_cap)}.</p><p>The proposal follows the ${uni.short_name} SOP format and includes the budget, risk register and timeline. Please review and approve or reject using the buttons below.</p>`;
+  const html = `<p>Dear ${esc(faculty?.name ?? "Advisor")},</p><p>The ${esc(uni.society_name)} submits the proposal for <b>${esc(ev.title)}</b> on <b>${fmtDate(ev.date)}</b> (${esc(ev.start_time)} to ${esc(ev.end_time)}) at ${esc(venue?.name ?? "TBC")} for ${ev.pax} participants, budget cap ${fmtRM(ev.budget_cap)}.</p><p>The proposal follows the ${esc(uni.short_name)} SOP format and includes the budget, risk register and timeline. Please review and approve or reject using the buttons below.</p>`;
   return gate(user, "email.faculty", `Submit "${ev.title}" proposal to faculty advisor`, { event_id: eventId, to: faculty?.email, subject: `[Approval] Event proposal, ${ev.title} (${fmtDate(ev.date)})`, html }, { eventId, runId });
 }
 

@@ -89,7 +89,7 @@ async function notifyApproverByEmail(role: string, dept: string | null, approval
       to: a.email,
       kind: "approval_ping",
       subject: `[Movents] Approval needed: ${approval.title}`,
-      html: emailShell("Approval needed", `<p>${requester.name} needs your approval for <b>${approval.title}</b>.</p><p><a href="${appUrl()}/approvals">Open approval queue</a></p>`),
+      html: emailShell("Approval needed", `<p>${esc(requester.name)} needs your approval for <b>${esc(approval.title)}</b>.</p><p><a href="${appUrl()}/approvals">Open approval queue</a></p>`),
       eventId: approval.event_id,
       relatedId: approval.id,
       sentBy: "system",
@@ -122,8 +122,14 @@ export async function decideApproval(user: User, approvalId: string, decision: "
   if (!canDecide(user, req)) throw new Error(`Only a ${req.approver_role}${req.approver_department ? ` (${req.approver_department})` : ""} can decide this`);
   const requester = req.requested_by ? await one<User>("SELECT * FROM users WHERE id = $1", [req.requested_by]) : null;
 
+  // Claim the request atomically: two approvers (or a double click) can't both run it.
+  const claimed = await one(
+    "UPDATE approval_requests SET status = $2, decided_by = $3, decided_at = now(), decision_note = $4 WHERE id = $1 AND status = 'pending' RETURNING id",
+    [req.id, decision === "reject" ? "rejected" : "approved", user.id, note ?? null],
+  );
+  if (!claimed) throw new Error("This request was just decided by someone else");
+
   if (decision === "reject") {
-    await update("approval_requests", req.id, { status: "rejected", decided_by: user.id, decided_at: new Date(), decision_note: note ?? null });
     if (req.action_type === "email.speaker" && req.payload.speaker_id) await update("speakers", String(req.payload.speaker_id), { status: "found" });
     if (req.action_type === "payment.deposit" && req.payload.vendor_id) await update("vendors", String(req.payload.vendor_id), { deposit_status: "none" });
     if (req.action_type === "publish.social") for (const cid of (req.payload.creative_ids as string[]) ?? []) await update("creatives", cid, { status: "draft" });
@@ -132,7 +138,6 @@ export async function decideApproval(user: User, approvalId: string, decision: "
     return { status: "rejected" as const };
   }
 
-  await update("approval_requests", req.id, { status: "approved", decided_by: user.id, decided_at: new Date(), decision_note: note ?? null });
   await audit(user, "approval.approved", { action: req.action_type, title: req.title, approval_id: req.id, requested_by: requester?.name }, { eventId: req.event_id, approvedBy: user.name });
   try {
     const result = await execute(req.action_type, req.payload, requester ?? user, user, req);
@@ -160,10 +165,11 @@ export async function facultyDecision(approvalId: string, decision: "approve" | 
     : null;
   const actor = faculty ?? { id: null, name: "Faculty advisor" };
   const approved = decision === "approve";
-  await update("approval_requests", req.id, {
-    status: approved ? "executed" : "rejected",
-    result: { ...(req.result ?? {}), faculty_decision: decision, faculty_note: note ?? null, faculty_decided_at: new Date().toISOString() },
-  });
+  const claimed = await one(
+    "UPDATE approval_requests SET status = $2, result = $3 WHERE id = $1 AND status = 'awaiting_faculty' RETURNING id",
+    [req.id, approved ? "executed" : "rejected", JSON.stringify({ ...(req.result ?? {}), faculty_decision: decision, faculty_note: note ?? null, faculty_decided_at: new Date().toISOString() })],
+  );
+  if (!claimed) throw new Error("This submission was already decided");
   if (req.event_id) {
     await update("events", req.event_id, { status: approved ? "approved" : "draft" });
     if (approved) {

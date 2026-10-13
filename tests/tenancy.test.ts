@@ -100,3 +100,25 @@ test("deleting an account removes access and personal data; sole Presidents must
   assert.match(row!.email, /@invalid$/);
   assert.equal(await one("SELECT 1 FROM memberships WHERE user_id = $1", [m.id]), null);
 });
+
+test("only the society that added a university can change its rules; VPs can't make Presidents", async () => {
+  const { canManageUniversity } = await import("../src/lib/universities");
+  const owner = await findOrCreateUser({ email: `owner-${tag}@uni.test`, verified: true });
+  const sid = await W.createSociety(owner, { name: "Owner Club", universityId: "__new", newUniversity: { name: `Owned University ${tag}`, short: "OU" } });
+  const uni = (await one<{ university_id: string }>("SELECT university_id FROM societies WHERE id = $1", [sid]))!.university_id;
+  const other = await findOrCreateUser({ email: `other-${tag}@uni.test`, verified: true });
+  await W.createSociety(other, { name: "Other Club", universityId: uni });
+  assert.equal(await canManageUniversity(await reload(owner), uni), true);
+  assert.equal(await canManageUniversity(await reload(other), uni), false);
+  assert.equal(await canManageUniversity(await reload(other), "uni_sunway"), false);
+
+  const vpEmail = `vp-${tag}@uni.test`;
+  const o = await reload(owner);
+  await W.inviteMember(o, { email: vpEmail, role: "vp" });
+  const inv = await one<{ id: string }>("SELECT id FROM invites WHERE email = $1", [vpEmail]);
+  let vp = await findOrCreateUser({ email: vpEmail, verified: true });
+  await W.acceptInviteById(vp, inv!.id);
+  vp = await reload(vp);
+  await assert.rejects(W.inviteMember(vp, { email: `sock-${tag}@uni.test`, role: "president" }), /Only a President/);
+  await assert.rejects(W.changeMemberRole(vp, o.id, "committee", null), /Only a President/);
+});

@@ -1,6 +1,8 @@
 import "server-only";
 import { lookup } from "node:dns/promises";
 import net from "node:net";
+import https from "node:https";
+import type { IncomingMessage } from "node:http";
 
 /** Media types we store and serve. SVG and HTML are never accepted (script risk). */
 const SIGNATURES: { mime: string; test: (b: Buffer) => boolean }[] = [
@@ -38,45 +40,73 @@ export function fromDataUrl(dataUrl: string) {
   return toMedia(Buffer.from(m[1], "base64"));
 }
 
-function privateIp(ip: string) {
+function privateIp(ip: string): boolean {
   if (net.isIPv4(ip)) {
     const [a, b] = ip.split(".").map(Number);
-    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+    return (
+      a === 0 || a === 10 || a === 127 || a >= 224 ||
+      (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) || (a === 192 && b === 0) || (a === 198 && (b === 18 || b === 19))
+    );
   }
   const v = ip.toLowerCase();
-  if (v.startsWith("::ffff:")) return privateIp(v.slice(7));
-  return v === "::1" || v === "::" || v.startsWith("fc") || v.startsWith("fd") || v.startsWith("fe80");
+  const v4 = v.match(/^(?:::ffff:|::|64:ff9b::)(\d+\.\d+\.\d+\.\d+)$/);
+  if (v4) return privateIp(v4[1]);
+  if (/^(::ffff:|64:ff9b:|2002:)/.test(v)) return true; // mapped/translated/6to4 forms we can't inspect
+  return v === "::1" || v === "::" || /^(fc|fd|fe[89ab])/.test(v);
+}
+
+/** DNS lookup for the actual connection: every resolved address must be public, and the socket uses one of them. */
+const safeLookup: net.LookupFunction = (hostname, options, callback) => {
+  lookup(hostname, { all: true }).then(
+    (addrs) => {
+      if (!addrs.length || addrs.some((a) => privateIp(a.address))) return callback(new Error("Media URL points to a private address"), "", 4);
+      const pick = addrs[0];
+      if ((options as { all?: boolean }).all) return (callback as unknown as (e: null, a: typeof addrs) => void)(null, addrs);
+      callback(null, pick.address, pick.family);
+    },
+    (err) => callback(err, "", 4),
+  );
+};
+
+function get(url: URL): Promise<IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { lookup: safeLookup, timeout: 20_000, headers: { "user-agent": "Movents/2 (+media fetch)" } }, resolve);
+    req.on("timeout", () => req.destroy(new Error("Media download timed out")));
+    req.on("error", reject);
+  });
 }
 
 /**
- * Download media from a public https URL: no private/internal hosts, at most
- * 3 redirects (each re-checked), a timeout and a size cap.
+ * Download media from a public https URL: no private/internal hosts (checked
+ * on the connection itself, so DNS tricks don't help), at most 3 redirects,
+ * a timeout and a size cap.
  */
 export async function fetchMedia(url: string) {
-  let current = url;
+  let current = new URL(url);
   for (let hop = 0; hop < 4; hop++) {
-    const u = new URL(current);
-    if (u.protocol !== "https:") throw new Error("Media URL must use https");
-    const { address } = await lookup(u.hostname);
-    if (privateIp(address)) throw new Error("Media URL points to a private address");
-    const res = await fetch(u, { redirect: "manual", signal: AbortSignal.timeout(20_000) });
-    if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
-      current = new URL(res.headers.get("location")!, u).toString();
+    if (current.protocol !== "https:") throw new Error("Media URL must use https");
+    if (net.isIP(current.hostname.replace(/^\[|\]$/g, "")) && privateIp(current.hostname.replace(/^\[|\]$/g, ""))) throw new Error("Media URL points to a private address");
+    const res = await get(current);
+    const status = res.statusCode ?? 0;
+    if (status >= 300 && status < 400 && res.headers.location) {
+      res.resume();
+      current = new URL(res.headers.location, current);
       continue;
     }
-    if (!res.ok || !res.body) throw new Error(`Could not download media (${res.status})`);
+    if (status < 200 || status >= 300) {
+      res.resume();
+      throw new Error(`Could not download media (${status})`);
+    }
     const chunks: Buffer[] = [];
     let size = 0;
-    const reader = res.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
+    for await (const chunk of res) {
+      size += (chunk as Buffer).length;
       if (size > MAX_VIDEO_BYTES) {
-        await reader.cancel();
+        res.destroy();
         throw new Error("Media file too large");
       }
-      chunks.push(Buffer.from(value));
+      chunks.push(chunk as Buffer);
     }
     return toMedia(Buffer.concat(chunks));
   }

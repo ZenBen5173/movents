@@ -25,9 +25,13 @@ export function listWorkspaces(userId: string) {
 
 /** Make a membership the active workspace (users.society_id/role/department mirror it). */
 export async function switchWorkspace(userId: string, societyId: string) {
-  const m = await one<{ role: Role; department: string | null }>("SELECT role, department FROM memberships WHERE user_id = $1 AND society_id = $2", [userId, societyId]);
-  if (!m) throw new Error("You are not a member of that society");
-  await query("UPDATE users SET society_id = $2, role = $3, department = $4 WHERE id = $1", [userId, societyId, m.role, m.department]);
+  // One statement: the switch only happens if the membership exists right now.
+  const r = await one(
+    `UPDATE users u SET society_id = m.society_id, role = m.role, department = m.department
+     FROM memberships m WHERE u.id = $1 AND m.user_id = u.id AND m.society_id = $2 RETURNING u.id`,
+    [userId, societyId],
+  );
+  if (!r) throw new Error("You are not a member of that society");
 }
 
 /** After a membership changes or goes away, keep the active workspace valid. */
@@ -78,6 +82,7 @@ export async function inviteMember(actor: User, input: { email: string; role: Ro
   const email = normaliseEmail(input.email);
   if (!EMAIL_RE.test(email)) throw new Error("Enter a valid email address.");
   if (!ROLES.includes(input.role)) throw new Error("Pick a role.");
+  if (input.role === "president" && actor.role !== "president") throw new Error("Only a President can invite a President.");
   const existing = await one(
     "SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.society_id = $1 AND lower(u.email) = $2",
     [actor.society_id, email],
@@ -191,6 +196,7 @@ export async function changeMemberRole(actor: User, userId: string, role: Role, 
   const sid = actor.society_id!;
   const m = await one<{ role: Role }>("SELECT role FROM memberships WHERE society_id = $1 AND user_id = $2", [sid, userId]);
   if (!m) throw new Error("Not a member");
+  if (m.role === "president" && actor.role !== "president") throw new Error("Only a President can change a President's role.");
   if (m.role === "president" && role !== "president" && (await presidents(sid)) <= 1) throw new Error("A society needs at least one President.");
   if (role === "president" && actor.role !== "president") throw new Error("Only a President can appoint a President.");
   await query("UPDATE memberships SET role = $3, department = $4 WHERE society_id = $1 AND user_id = $2", [sid, userId, role, department?.trim() || null]);
@@ -203,6 +209,7 @@ export async function removeFromSociety(actor: User, userId: string) {
   if (userId !== actor.id) assertAdmin(actor);
   const m = await one<{ role: Role }>("SELECT role FROM memberships WHERE society_id = $1 AND user_id = $2", [sid, userId]);
   if (!m) throw new Error("Not a member");
+  if (m.role === "president" && userId !== actor.id && actor.role !== "president") throw new Error("Only a President can remove a President.");
   if (m.role === "president" && (await presidents(sid)) <= 1) throw new Error("Appoint another President before this person leaves.");
   await transaction(async () => {
     await query("DELETE FROM memberships WHERE society_id = $1 AND user_id = $2", [sid, userId]);

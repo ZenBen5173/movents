@@ -50,7 +50,12 @@ export async function acceptInviteAction(inviteId: string) {
 
 export async function acceptInviteTokenAction(form: FormData) {
   const user = await signedIn();
-  await W.acceptInvite(user, String(form.get("token") ?? ""));
+  const token = String(form.get("token") ?? "");
+  try {
+    await W.acceptInvite(user, token);
+  } catch {
+    redirect(`/invite/${encodeURIComponent(token)}?error=1`);
+  }
   revalidatePath("/", "layout");
   redirect("/");
 }

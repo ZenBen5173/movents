@@ -11,7 +11,7 @@ import { loadBundle, budgetTotals } from "../docs/builders";
 import { generateKit, imageHref, needsImage, refreshPrompts, setImage } from "../marketing";
 import { update as updateRow } from "../db";
 import type { AgentRun, Creative, StepStatus, User } from "../types";
-import { addMembers, assertMember, assertMemberOf, listMembers, removeMember, resolvePeople, visibleSql } from "../members";
+import { addMembers, assertMember, assertMemberOf, listMembers, removeMember, resolvePeople, seesAll, visibleSql } from "../members";
 import { offerLabel, outreachSponsors, recordSponsor, saveSponsors, type Decision, type SponsorInput } from "../sponsors";
 import { audit } from "../audit";
 import { isFinal } from "../rbac";
@@ -147,10 +147,15 @@ const ALL_TOOLS: Tool[] = [
       const eventId = String(a.event_id);
       const add = Array.isArray(a.add) ? (a.add as string[]) : [];
       const rem = Array.isArray(a.remove) ? (a.remove as string[]) : [];
+      if (add.length || rem.length) {
+        const lead = await one("SELECT 1 FROM event_members WHERE event_id = $1 AND user_id = $2 AND role IN ('lead','colead')", [eventId, user.id]);
+        if (!lead && !seesAll(user)) throw new Error("Only the event lead (or President/VP) can change the team");
+      }
       const added = await resolvePeople(user.society_id ?? "", add);
       await addMembers(eventId, added.ids, user.id);
       const removed = await resolvePeople(user.society_id ?? "", rem);
-      for (const uid of removed.ids) await removeMember(eventId, uid);
+      const leadRow = await one<{ user_id: string }>("SELECT user_id FROM event_members WHERE event_id = $1 AND role = 'lead'", [eventId]);
+      for (const uid of removed.ids) if (uid !== leadRow?.user_id) await removeMember(eventId, uid);
       return { team: (await listMembers(eventId)).map((m) => ({ name: m.name, role: m.member_role, department: m.department })), not_found: [...added.unknown, ...removed.unknown] };
     },
   },
