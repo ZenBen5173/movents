@@ -15,7 +15,11 @@ export default async function PromotionPage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   if (!(await canViewEvent(id))) return null;
   const items = await query<{ id: string; channel: string; title: string; due_date: string; status: string; link: string | null }>("SELECT * FROM promo_items WHERE event_id = $1 ORDER BY due_date", [id]);
-  const creatives = (await query<Creative>("SELECT * FROM creatives WHERE event_id = $1", [id])).sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
+  const creatives = (await query<Creative>(
+    // Only the first bytes of image_data: enough to tell video from image without loading multi-MB posters.
+    "SELECT id, event_id, kind, channel, title, caption, hashtags, image_prompt, image_source, width, height, status, posted_url, image_url, created_at, updated_at, left(image_data, 32) AS image_data FROM creatives WHERE event_id = $1",
+    [id],
+  )).sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
   return (
     <div className="space-y-6">
       <Card title="Marketing kit" description="Poster, Instagram post & story, LinkedIn image, captions and hashtags per channel, and a Reels teaser storyboard. Posting needs President approval (SOP publicity rule).">
