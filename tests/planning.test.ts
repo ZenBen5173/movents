@@ -24,6 +24,15 @@ test("rolls a past date into next year and reads k budgets", () => {
   assert.equal(p.budget, 2500);
 });
 
+test("parsePrompt: headcount words like 120-person are read as pax and kept out of the title", () => {
+  const p = parsePrompt("Plan a 120-person AI talk on 20 Dec 2026, budget RM3,000", TODAY);
+  assert.equal(p.pax, 120);
+  assert.equal(p.title, "AI Talk");
+  assert.ok(!p.missing.includes("pax"));
+  assert.equal(parsePrompt("Plan a 60 attendee workshop on cloud on 5 Dec", TODAY).pax, 60);
+  assert.equal(parsePrompt("Plan a 1-person demo on 5 Dec", TODAY).pax, 1);
+});
+
 test("lead times: venue booking missed for 15 Nov, suggests compliant date on same weekday", () => {
   const r = checkLeadTimes("2026-11-15", TODAY, SUNWAY_SOP, 6);
   const venue = r.checks.find((c) => c.key === "venue_booking")!;

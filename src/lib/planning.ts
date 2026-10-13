@@ -33,11 +33,14 @@ export type ParsedPrompt = {
   suppliers: string[];
 };
 
+/** Words that follow a headcount: "150 pax", "120-person", "80 people", "200 students". */
+const HEADCOUNT = String.raw`(?:pax|people|persons?|attendees?|participants?|students?|guests?|delegates?)`;
+
 export function parsePrompt(prompt: string, todayIso: string): ParsedPrompt {
   const p = prompt.replace(/\s+/g, " ").trim();
   const missing: string[] = [];
 
-  const paxM = p.match(/(\d{1,5})\s*-?\s*(?:pax|people|persons|attendees|participants|students|guests)\b/i);
+  const paxM = p.match(new RegExp(String.raw`(\d{1,5})\s*-?\s*${HEADCOUNT}\b`, "i"));
   const pax = paxM ? Number(paxM[1]) : (missing.push("pax"), 100);
 
   const budM =
@@ -69,10 +72,10 @@ export function parsePrompt(prompt: string, todayIso: string): ParsedPrompt {
   const uniM = p.match(/\b(?:at|in)\s+([A-Z][A-Za-z]+(?:\s+(?:University|College|Uni))?)/);
   const university = uniM ? uniM[1].replace(/\s+(University|College|Uni)$/i, "") : null;
 
-  // "150-pax AI talk at Sunway" → "AI talk"
+  // "150-pax AI talk at Sunway" / "a 120-person AI talk on …" → "AI talk"
   let phrase =
-    p.match(/\d+\s*-?\s*pax\s+(.+?)\s+(?:at|in|on|for)\b/i)?.[1] ??
-    p.match(/plan\s+(?:a|an|the)\s+(?:\d+\s*-?\s*pax\s+)?(.+?)\s+(?:at|in|on|for)\b/i)?.[1] ??
+    p.match(new RegExp(String.raw`\d+\s*-?\s*${HEADCOUNT}\s+(.+?)\s+(?:at|in|on|for)\b`, "i"))?.[1] ??
+    p.match(new RegExp(String.raw`plan\s+(?:a|an|the)\s+(?:\d+\s*-?\s*${HEADCOUNT}\s+)?(.+?)\s+(?:at|in|on|for)\b`, "i"))?.[1] ??
     "event";
   phrase = phrase.replace(/^(a|an|the)\s+/i, "");
   const formatM = phrase.match(/\b(talk|workshop|seminar|conference|hackathon|meetup|forum|panel|competition|bootcamp|webinar|summit|networking night|career fair)\b/i);
