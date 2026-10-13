@@ -10,11 +10,13 @@ import { Stat } from "@/components/app/ui";
 import { ActionButton } from "@/components/app/action-button";
 import { RsvpTable } from "@/components/app/rsvp-table";
 import { promoteWaitlist, publish, sync } from "@/app/actions";
+import { canViewEvent } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function RegistrationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await canViewEvent(id))) return null;
   const b = (await loadBundle(id))!;
   const reminders = await query<{ id: string; label: string; scheduled_for: string; status: string }>("SELECT * FROM reminders WHERE event_id = $1 ORDER BY scheduled_for", [id]);
   const lessons = await query<{ content: string }>("SELECT content FROM sop_documents WHERE university_id = $1 AND kind = 'lessons' ORDER BY created_at DESC", [b.university!.id]);
@@ -64,7 +66,7 @@ export default async function RegistrationPage({ params }: { params: Promise<{ i
         <div className="group relative">
           <a href={`/e/${id}`} target="_blank" className="flex h-10 items-center gap-2 rounded-xl border-[1.5px] border-ink bg-card px-3 text-sm font-semibold hover:bg-sand/50"><QrCode className="size-4" />Sign-up page</a>
           <span className="pointer-events-none absolute left-0 top-full z-30 mt-2 rounded-xl border-[1.5px] border-ink bg-white p-2 opacity-0 shadow-[3px_3px_0_0_#161514] transition-opacity group-hover:opacity-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img src={qr} alt="" className="size-32" />
           </span>
         </div>

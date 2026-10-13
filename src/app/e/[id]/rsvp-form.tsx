@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import QRCode from "qrcode";
 import { PartyPopper } from "lucide-react";
 import { toast } from "sonner";
 import { registerRsvp } from "@/app/actions";
@@ -16,7 +15,16 @@ export function RsvpForm({ eventId, full }: { eventId: string; full: boolean }) 
   const [qr, setQr] = useState<string | null>(null);
   const [pending, start] = useTransition();
   useEffect(() => {
-    if (ticket) QRCode.toDataURL(ticket.ticket, { margin: 1, width: 240 }).then(setQr);
+    if (!ticket) return;
+    let alive = true;
+    // qrcode is only needed once a ticket exists, so it is loaded on demand.
+    import("qrcode")
+      .then((QRCode) => QRCode.toDataURL(ticket.ticket, { margin: 1, width: 240 }))
+      .then((url) => alive && setQr(url))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
   }, [ticket]);
   return (
     <div className="relative rounded-2xl border-[1.5px] border-ink bg-card p-5 shadow-[4px_4px_0_0_#161514]">
@@ -26,7 +34,7 @@ export function RsvpForm({ eventId, full }: { eventId: string; full: boolean }) 
             <PartyPopper className="mx-auto size-8 text-primary" />
             <p className="mt-2 font-semibold">{ticket.status === "waitlist" ? "You're on the waitlist" : "You're in!"}</p>
             <p className="text-xs text-muted-foreground">Show this QR at the door.</p>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             {qr && <img src={qr} alt={`Ticket ${ticket.ticket}`} className="mx-auto mt-3 size-48 rounded-lg bg-white p-2" />}
             <p className="mt-2 font-mono text-sm">{ticket.ticket}</p>
           </motion.div>

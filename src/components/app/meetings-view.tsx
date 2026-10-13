@@ -26,7 +26,7 @@ type Props = {
 
 // ------------------------------------------------------------------ time
 
-/** Ticks from the server's "now" (the demo day), so the countdown agrees with the page. */
+/** Ticks from the server's "now", so the countdown agrees with the page. */
 function useClock(serverNow: number) {
   const [now, setNow] = useState(serverNow);
   useEffect(() => {

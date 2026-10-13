@@ -2,7 +2,7 @@ import type { SpeakerCandidate, SupplierCandidate } from "./research";
 
 /**
  * Public list prices gathered from supplier websites (Oct 2026 research).
- * Used until WorkBuddy saves live quotes for an event.
+ * Used until live quotes are saved for an event.
  * "From" prices — always get a written quote before booking.
  */
 export const REFERENCE_SUPPLIERS: (SupplierCandidate & { rating: number })[] = [
@@ -26,11 +26,11 @@ export const REFERENCE_SUPPLIERS: (SupplierCandidate & { rating: number })[] = [
   { category: "cardholder", name: "Lapasar, PVC name card holder", url: "https://mall.lapasar.com/products/228289", unit: "piece", unit_price: 0.95, snippet: "PVC name card holder RM0.95.", source: "reference", rating: 3.9 },
 ];
 
-/** Placeholder speakers until WorkBuddy saves real ones. Clearly not real people. */
+/** Placeholder speakers until real ones are added. Clearly not real people. */
 export function SAMPLE_SPEAKERS(topic: string): SpeakerCandidate[] {
   return [
-    { name: "Sample Speaker A", headline: `Industry practitioner, ${topic}`, source_url: "", email: null, fit_reason: "Placeholder until WorkBuddy saves real speakers.", source: "sample" },
-    { name: "Sample Speaker B", headline: `University researcher, ${topic}`, source_url: "", email: null, fit_reason: "Placeholder until WorkBuddy saves real speakers.", source: "sample" },
-    { name: "Sample Speaker C", headline: `Startup founder, ${topic}`, source_url: "", email: null, fit_reason: "Placeholder until WorkBuddy saves real speakers.", source: "sample" },
+    { name: "Sample Speaker A", headline: `Industry practitioner, ${topic}`, source_url: "", email: null, fit_reason: "Placeholder until a real speaker is added.", source: "sample" },
+    { name: "Sample Speaker B", headline: `University researcher, ${topic}`, source_url: "", email: null, fit_reason: "Placeholder until a real speaker is added.", source: "sample" },
+    { name: "Sample Speaker C", headline: `Startup founder, ${topic}`, source_url: "", email: null, fit_reason: "Placeholder until a real speaker is added.", source: "sample" },
   ];
 }

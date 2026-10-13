@@ -1,9 +1,10 @@
 "use server";
 
+import { publicError } from "@/lib/errors";
 import { revalidatePath } from "next/cache";
 import { id, insert, one, query, update } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import { assertMember } from "@/lib/members";
+import { assertMember, seesAll } from "@/lib/members";
 import { audit } from "@/lib/audit";
 
 type Res = { ok: true } | { ok: false; error: string };
@@ -14,7 +15,7 @@ async function run(fn: () => Promise<string | null | undefined | void>): Promise
     if (eventId) revalidatePath(`/events/${eventId}/day`);
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: publicError(err) };
   }
 }
 
@@ -38,7 +39,7 @@ const clean = (s: string | undefined, max = 200) => (s === undefined ? undefined
  */
 export async function updateRunsheetBlock(itemIds: string[], data: { activity?: string; owner?: string; notes?: string; location?: string }) {
   return run(async () => {
-    if (!itemIds.length) throw new Error("Nothing to update");
+    if (!Array.isArray(itemIds) || !itemIds.length || itemIds.length > 200) throw new Error("Nothing to update");
     const { user, eventId } = await onRow("runsheet_items", itemIds[0]);
     const own = new Set((await query<{ id: string }>("SELECT id FROM runsheet_items WHERE event_id = $1", [eventId])).map((r) => r.id));
     if (itemIds.some((x) => !own.has(x))) throw new Error("Rows do not belong to one event");
@@ -105,6 +106,8 @@ export async function setCoLead(eventId: string, userId: string | null) {
   return run(async () => {
     const user = await requireUser();
     await assertMember(user, eventId);
+    const lead = await one("SELECT 1 FROM event_members WHERE event_id = $1 AND user_id = $2 AND role = 'lead'", [eventId, user.id]);
+    if (!lead && !seesAll(user)) throw new Error("Only the project lead can choose the co-lead");
     if (userId) {
       const m = await one<{ role: string }>("SELECT role FROM event_members WHERE event_id = $1 AND user_id = $2", [eventId, userId]);
       if (!m) throw new Error("Add them to the team first");

@@ -4,36 +4,17 @@
 
 <h1 align="center">Movents</h1>
 
-<p align="center"><b>Tell WorkBuddy the event. Movents plans the rest.</b><br/>
-Campus event planning for university societies, driven end to end by Tencent WorkBuddy.</p>
+<p align="center"><b>Tell your AI assistant the event. Movents plans the rest.</b><br/>
+Event planning for university societies: SOP-compliant plans, budgets, approvals and paperwork, driven by any MCP-capable AI assistant.</p>
 
 <p align="center">
-  <a href="https://movents.vercel.app"><b>Live app</b></a> ·
-  <a href="https://github.com/ZenBen5173/movents"><b>GitHub</b></a> ·
-  <a href="docs/Movents-Pitch-Deck.pdf"><b>Slides (PDF)</b></a> ·
-  <a href="https://canva.link/iwsder9iekrtepe"><b>Full deck (Canva)</b></a> ·
-  <a href="docs/Movents-Pitch-Video.mp4"><b>Pitch video</b></a>
+  <a href="https://movents.vercel.app"><b>Open Movents</b></a> ·
+  <a href="docs/AI_ASSISTANTS.md"><b>Connect your AI</b></a> ·
+  <a href="docs/USER_GUIDE.md"><b>User guide</b></a> ·
+  <a href="docs/DEPLOYMENT.md"><b>Deploy</b></a>
 </p>
 
 ![Movents Box office: every event the society is running, with countdown, progress and budget at a glance](docs/screenshots/box-office.png)
-
-## Submission
-
-| | |
-|---|---|
-| **Group name** | Moomin Valley |
-| **Team** | Teo Zen Ben, Jeanette Tan En Jie, Colin Leong Hong Seng |
-| **Campus branch** | Taylor's University |
-| **Track** | Dormathon 2026, Track 2 (Tencent WorkBuddy) |
-| **GitHub repository** | https://github.com/ZenBen5173/movents |
-| **Deployed application** | https://movents.vercel.app |
-| **Presentation slides (PDF)** | [docs/Movents-Pitch-Deck.pdf](docs/Movents-Pitch-Deck.pdf) |
-| **Full pitch deck (Canva)** | [canva.link/iwsder9iekrtepe](https://canva.link/iwsder9iekrtepe), the complete deck with everything that did not fit in the 3-minute pitch |
-| **Pitch video (1:30)** | [docs/Movents-Pitch-Video.mp4](docs/Movents-Pitch-Video.mp4) |
-
-<p align="center"><img src="docs/movents-vercel-qr.png" alt="QR code to movents.vercel.app" width="160" /><br/><sub>Scan to open the live app</sub></p>
-
----
 
 ## The problem
 
@@ -43,18 +24,20 @@ semester.
 
 ## What Movents does
 
-One message to WorkBuddy becomes a fully planned event. Give it the idea, date, headcount, budget, who is helping and
-any suppliers you want. Through the Movents MCP server it plans everything the way your university's SOP requires:
+One message to your AI assistant becomes a fully planned event. Give it the idea, date, headcount, budget, who is
+helping and any suppliers you want. Through the Movents MCP server it plans everything the way your university's SOP
+requires:
 
 1. **Plan:** reads the university SOP and lessons from past events, then works the timeline back from the SOP deadlines, with task dependencies.
-2. **Research:** searches the web for speakers and supplier quotes (food, T-shirts, lanyards, card holders).
-3. **Budget:** composes a budget with 10% contingency and adapts it (cheaper suppliers, then cuts) until it fits the cap.
+2. **Research:** if your assistant can search the web, it finds speakers, supplier quotes and sponsors.
+3. **Budget:** composes a budget with contingency and adapts it (cheaper suppliers, then cuts) until it fits the cap.
 4. **Draft:** proposal in the SOP's format (PDF and Word), risk register with a weather plan, run of show, crew roster and a marketing kit.
 5. **Check:** budget within cap, every SOP section present, lead times met, venue free of clashes.
-6. **Act, with approval:** speaker invites, supplier quote requests, budget sign off, faculty submission, Luma and Meetup pages. Anything a member is not allowed to do goes to the right approver first, and every action is logged.
-7. **Close out:** after the event, the post-event report and lessons learned feed straight into the next plan.
+6. **Act, with approval:** speaker invites, supplier quotes, budget sign-off, faculty submission, event pages. Anything a member is not allowed to do goes to the right approver first, and every action is logged.
+7. **Close out:** after the event, the post-event report and lessons learned feed into the next plan.
 
-Many events can be planned at once, each private to its own team.
+Works with Claude (claude.ai, desktop, Claude Code), ChatGPT, Cursor and any other MCP client. See
+[Connect your AI assistant](docs/AI_ASSISTANTS.md).
 
 ## A look inside
 
@@ -63,84 +46,87 @@ Many events can be planned at once, each private to its own team.
 | ![Overview](docs/screenshots/project-overview.png) | ![Timeline](docs/screenshots/timeline.png) |
 | **Budget with spend charts** | **Speakers** |
 | ![Budget](docs/screenshots/budget.png) | ![Speakers](docs/screenshots/speakers.png) |
-| **Backstage approvals** | **Venue floor plan** |
-| ![Backstage](docs/screenshots/backstage.png) | ![Floor plan](docs/screenshots/floor-plan.png) |
-| **Sponsors** | **Meetings and minutes** |
-| ![Sponsors](docs/screenshots/sponsors.png) | ![Meetings](docs/screenshots/meetings.png) |
-| **University vendor list** | |
-| ![Vendors](docs/screenshots/vendors.png) | |
+| **Backstage approvals** | **Sponsors** |
+| ![Backstage](docs/screenshots/backstage.png) | ![Sponsors](docs/screenshots/sponsors.png) |
 
 ## Features
 
+**Workspaces and people**
+- Sign in with Google or an emailed one-time link. Each society is a private workspace; invite your committee by email with a role and department. One person can belong to several societies.
+- Event teams: only people added to an event can see and edit it (President, VP and faculty advisor see all of their society's events).
+
 **Projects**
 - Box office dashboard: countdown, progress, budget and risks for every event, plus your tasks grouped by event.
-- Event teams: only people added to an event can see and edit it (President, VP and faculty advisor see all).
 - Tasks as a list, board or Gantt timeline with dependencies and the critical path.
-- Risks: 5x5 heat map and a compact register with mitigation tasks.
-- Budget: donut charts, live budget sheet, 90% spend alert, swap suppliers with one click.
-- Speakers as lanyard passes with profile documents; suppliers with quote, contract and deposit tracking.
-- Sponsors: find sponsors, send outreach with the proposal attached (approval gated), track opens and replies, and see confirmed cash and in-kind offers on a donut.
-- Meetings: schedule with templates and calendar invites, agenda, attendance, minutes, decisions, and action items that become tasks.
-- Registration with Luma and Meetup sync, public sign-up page, waitlist, and QR door check-in with tabs.
-- Marketing kit: poster, Instagram and LinkedIn posts with captions (Nano Banana via WorkBuddy).
-- Per-event inbox, run of show timetable, editable crew roles, project lead and co-lead contacts.
-- Files in folders: proposal, budget, risk register, run sheet, calendar feed, post-event report.
+- Risks: 5x5 heat map and register with mitigation tasks. Budget with spend alerts and one-click supplier swaps.
+- Speakers, suppliers (quotes, contracts, deposits), sponsors (outreach with the proposal attached, replies, offers).
+- Meetings with agenda, minutes, decisions and action items that become tasks.
+- Registration page with waitlist and QR door check-in; optional Luma and Meetup publishing and sync.
+- Marketing kit: poster and social images with captions; your assistant can generate the images.
+- Generated files: proposal, budget sheet, risk register, run sheet, calendar feed, post-event report.
 
 **Universities**
-- SOP library with the approval chain, lead times, templates (pre-event proposal, post-event report, speaker profile) and budget rules explained on hover.
-- Venues with photos, search, a monthly booking calendar and floor plans.
-- Approved vendor list with photos, prices and ratings from past events.
-- Six universities seeded: Sunway, Taylor's, Monash Malaysia, Universiti Malaya, APU and UCSI.
+- SOP library with the approval chain, lead times, templates and budget rules. Upload your university's SOP and Movents applies its structure.
+- Venues with a booking calendar, and a shared supplier registry.
 
 **Governance**
-- Role-based approvals (Backstage) with full detail before you approve, faculty approval by signed link, and an audit log.
-
-## Using it with WorkBuddy
-
-Movents exposes an MCP server at `https://movents.vercel.app/api/mcp`. In the app, open **Settings**, copy the MCP
-config (it includes your API key) into WorkBuddy, and add the skill in [`workbuddy/skills/movents`](workbuddy/skills/movents/SKILL.md).
-Then ask WorkBuddy something like:
-
-> Plan a 150-pax AI talk at Sunway on 15 Nov, budget RM3,000, with Priya, Jason and Arjun. Use Mix Mix Catering for food.
+- Role-based approvals (Backstage), faculty approval by signed link, and a full audit log.
 
 ## Roles
 
 | Role | Can do without approval |
 |---|---|
-| President / VP | Everything |
+| President / VP | Everything; manage members |
 | Director | Speaker and supplier emails, approvals for their own department, budget up to the SOP limit |
 | Committee member | Drafts, plans and internal calendar. Everything outbound goes to Backstage for approval |
 | Faculty advisor | Approves or rejects the proposal from the emailed link |
 
-Switch accounts from the bottom of the sidebar to see each role.
+Your AI assistant acts as you, with exactly these permissions.
 
 ## Run locally
 
 ```bash
 npm install
+cp .env.example .env.local   # optional; everything works without keys
 npm run dev
 ```
 
-Open http://localhost:3000. No keys are needed: every integration has a demo mode, and demo data (six universities,
-eight events at every stage) is created on first load. Copy `.env.example` to `.env.local` to turn real
-integrations on (Outlook or Resend email, Google Calendar, Luma, Meetup, Stripe test mode, Gemini).
+Open http://localhost:3000 and sign in with any email: without an email provider the sign-in link is printed in the
+terminal. Without `DATABASE_URL` the app uses an embedded Postgres (PGlite) under `.data/`.
 
-## Stack
+## Architecture
 
-Next.js 15 (App Router), React 19, Tailwind CSS 4, PGlite (embedded Postgres) or any Postgres via `DATABASE_URL`,
-MCP over Streamable HTTP, `docx`, `pdf-lib` and `exceljs` for documents, Remotion for the pitch video.
+- **Next.js 15** (App Router, server actions, route handlers), React 19, Tailwind CSS 4.
+- **Postgres** through `postgres` (Neon, Supabase, RDS…), PGlite for local development and tests.
+  Versioned migrations in `src/lib/migrations`, applied automatically under an advisory lock or with `npm run migrate`.
+- **Auth:** opaque, hashed session cookies; Google OAuth and one-time email links; hashed personal API tokens;
+  an OAuth 2.1 authorization server (PKCE, dynamic client registration) for MCP clients.
+- **Tenancy:** every query is scoped to the society; event access is checked on every page, action, API route and MCP tool.
+- **MCP:** Streamable HTTP at `/api/mcp` with validated tool arguments and tool annotations. The same tools are
+  available over REST at `/api/agent/tools/<name>` ([OpenAPI](https://movents.vercel.app/api/openapi.json)).
+- **Documents:** `docx`, `pdf-lib`, `exceljs`, rendered on request from live data.
 
-## Deploy
+## Security
 
-Deployed on Vercel. Without `DATABASE_URL` each instance starts from the demo snapshot in `snapshot/` (rebuild it with
-`node scripts/snapshot-db.mjs`). Set `DATABASE_URL` for persistent data, plus `APP_SECRET` and `CRON_SECRET`.
-`vercel.json` schedules the daily automation (follow-ups, reminders, spend alerts).
+Security headers (CSP, HSTS, frame blocking), CSRF origin checks, rate limits on sign-in, public forms and MCP,
+signed expiring links for anything shared outside the app, type-checked and size-capped uploads, SSRF-safe media
+fetching, and errors logged server-side without leaking internals. Report vulnerabilities privately to the maintainers.
 
 ## Tests
 
 ```bash
-npm test
+npm run lint && npm run typecheck && npm test
 ```
 
-Planning engine, budget adapt loop, lead time checks, venue clashes, run sheet, NPS, roles table, SOP parser, team
-and supplier parsing from the brief.
+Covers the planning engine and budget loop, lead times, venue clashes, roles, SOP parsing, tenant isolation,
+invites, OAuth (PKCE, rotation), signed links, argument validation, media checks and database behaviour.
+CI runs them against Postgres on every push.
+
+## Deploy
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). In short: Vercel + any Postgres, set `DATABASE_URL`, `APP_SECRET`,
+`APP_URL`, `CRON_SECRET` and an email provider.
+
+---
+
+Movents started as a [Dormathon 2026](docs/HACKATHON.md) entry.

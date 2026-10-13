@@ -5,6 +5,7 @@ import { MarketingKit } from "@/components/app/marketing-kit";
 import { imageHref, isVideo } from "@/lib/marketing";
 import { nanoBananaEnabled } from "@/lib/integrations/nanobanana";
 import type { Creative } from "@/lib/types";
+import { canViewEvent } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ const ORDER = ["poster", "ig_post", "ig_story", "linkedin", "video"];
 
 export default async function PromotionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await canViewEvent(id))) return null;
   const items = await query<{ id: string; channel: string; title: string; due_date: string; status: string; link: string | null }>("SELECT * FROM promo_items WHERE event_id = $1 ORDER BY due_date", [id]);
   const creatives = (await query<Creative>("SELECT * FROM creatives WHERE event_id = $1", [id])).sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
   return (

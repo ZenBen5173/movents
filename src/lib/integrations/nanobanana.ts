@@ -2,8 +2,8 @@ import "server-only";
 
 /**
  * Nano Banana (Gemini image model) — direct path for when the app itself
- * should render a creative. In the WorkBuddy flow, WorkBuddy calls its own
- * Nano Banana integration and attaches the result back via MCP instead.
+ * should render a creative. When an AI assistant has its own image model, it
+ * generates the image and attaches it back over MCP instead.
  */
 export function nanoBananaEnabled() {
   return Boolean(process.env.GEMINI_API_KEY);

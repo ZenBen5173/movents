@@ -5,6 +5,7 @@ import { fmtRM } from "@/lib/appurl";
 import { Card } from "@/components/app/ui";
 import { VendorRowActions } from "@/components/app/people-forms";
 import { cn } from "@/lib/utils";
+import { canViewEvent } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ const CAT_LABEL: Record<string, string> = { food: "Food", tshirt: "T-shirts", la
 /** Chosen suppliers only, each with a three-step track: quote, contract, deposit. Swap suppliers on the Budget page. */
 export default async function SuppliersPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await canViewEvent(id))) return null;
   const b = (await loadBundle(id))!;
   const payments = await query<{ vendor_id: string; checkout_url: string; status: string }>("SELECT * FROM payments WHERE event_id = $1 ORDER BY created_at DESC", [id]);
   const chosen = b.vendors.filter((v) => v.selected);

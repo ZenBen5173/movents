@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { id, insert, one, query, update } from "@/lib/db";
+import { id, insert, one, pick, query, transaction, update } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { addMembers, assertMember, assertMemberOf, isMember, removeMember, seesAll } from "@/lib/members";
-import { audit } from "@/lib/audit";
+import { audit, notify } from "@/lib/audit";
 import { decideApproval, facultyDecision, gate } from "@/lib/actions";
 import { canManageSop, isFinal } from "@/lib/rbac";
 import { verifyToken } from "@/lib/appurl";
@@ -14,7 +14,11 @@ import { parseSopText } from "@/lib/sop-parse";
 import { SUNWAY_SOP } from "@/lib/sop-default";
 import { paymentsMode, retrieveCheckout } from "@/lib/integrations/payments";
 import { forwardNote, vendorRecipient } from "@/lib/vendor-contact";
-import type { ApprovalRequest, EventRow, Rsvp, Sop, User, Vendor, Venue } from "@/lib/types";
+import { publicError } from "@/lib/errors";
+import { canEditRegistryVendor, canManageUniversity } from "@/lib/universities";
+import { PUBLISHED_SQL } from "@/lib/public-events";
+import { clientIp, rateLimit } from "@/lib/ratelimit";
+import type { EventRow, Rsvp, Sop, User, Vendor, Venue } from "@/lib/types";
 
 /** Signed-in user who is on the team of the event this row belongs to. */
 async function onTeam(table: string, rowId: string) {
@@ -28,6 +32,34 @@ async function onEvent(eventId: string | null | undefined) {
   return user;
 }
 
+/**
+ * `admin`: may change the university's SOP, templates and rules (see
+ * canManageUniversity). Otherwise: the user's society is at this university.
+ */
+async function inUniversity(universityId: string, admin = false) {
+  const user = await requireUser();
+  if (admin) {
+    if (!(await canManageUniversity(user, universityId))) throw new Error("This university's SOP is maintained by the society that added it. Ask them, or contact support.");
+    return user;
+  }
+  const ok = await one("SELECT 1 FROM societies WHERE id = $1 AND university_id = $2", [user.society_id, universityId]);
+  if (!ok) throw new Error("You can only change your own university's records");
+  return user;
+}
+
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+const str = (v: unknown, max = 500) => String(v ?? "").trim().slice(0, max);
+/** http(s) links only; anything else (javascript:, data:) is dropped. */
+const safeUrl = (v: unknown) => {
+  const s = str(v, 2000);
+  try {
+    const u = new URL(s);
+    return (u.protocol === "https:" || u.protocol === "http:") && u.hostname.includes(".") ? u.toString() : null;
+  } catch {
+    return null;
+  }
+};
+
 type Res = { ok: true; message?: string; data?: unknown } | { ok: false; error: string };
 
 async function wrap(fn: () => Promise<string | void | { message?: string; data?: unknown }>, paths: string[] = []): Promise<Res> {
@@ -38,7 +70,7 @@ async function wrap(fn: () => Promise<string | void | { message?: string; data?:
     if (typeof r === "string") return { ok: true, message: r };
     return { ok: true, ...(r ?? {}) };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: publicError(err) };
   }
 }
 
@@ -73,15 +105,9 @@ export async function decideAll(ids: string[]) {
 
 export async function facultyDecide(approvalId: string, token: string, decision: "approve" | "reject", note?: string) {
   return wrap(async () => {
-    const user = await (async () => {
-      try {
-        return await requireUser();
-      } catch {
-        return null;
-      }
-    })();
-    if (!verifyToken(approvalId, token) && user?.role !== "faculty_advisor") throw new Error("Invalid or expired link");
-    const r = await facultyDecision(approvalId, decision, note);
+    if (!verifyToken(`faculty:${approvalId}`, token)) throw new Error("Invalid or expired link");
+    await rateLimit(`faculty:${approvalId}`, 20, 3600);
+    const r = await facultyDecision(approvalId, decision === "approve" ? "approve" : "reject", note ? str(note, 2000) : undefined);
     return `Proposal ${r.status}`;
   }, ["/"]);
 }
@@ -123,8 +149,10 @@ export async function setEventMember(eventId: string, userId: string, on: boolea
   return wrap(async () => {
     const user = await requireUser();
     if (!(await isMember(user, eventId))) throw new Error("Only people on this event can change its team");
-    const target = await one<User>("SELECT * FROM users WHERE id = $1", [userId]);
-    if (!target || target.society_id !== user.society_id) throw new Error("Person not found");
+    const lead = await one<{ user_id: string }>("SELECT user_id FROM event_members WHERE event_id = $1 AND role IN ('lead','colead') AND user_id = $2", [eventId, user.id]);
+    if (!lead && !seesAll(user) && userId !== user.id) throw new Error("Only the event lead can change the team");
+    const target = await one<User>("SELECT * FROM society_members WHERE id = $1 AND society_id = $2", [userId, user.society_id]);
+    if (!target) throw new Error("Person not found");
     if (on) await addMembers(eventId, [userId], user.id);
     else {
       const lead = await one<{ user_id: string }>("SELECT user_id FROM event_members WHERE event_id = $1 AND role = 'lead'", [eventId]);
@@ -150,7 +178,8 @@ export async function setTaskStatus(taskId: string, status: "todo" | "doing" | "
 export async function setActual(lineId: string, actual: number | null) {
   return wrap(async () => {
     const user = await onTeam("budget_lines", lineId);
-    const l = await update<{ event_id: string; description: string }>("budget_lines", lineId, { actual });
+    if (actual != null && (!Number.isFinite(Number(actual)) || Number(actual) < 0)) throw new Error("Enter a valid amount");
+    const l = await update<{ event_id: string; description: string }>("budget_lines", lineId, { actual: actual == null ? null : Number(actual) });
     await audit(user, "budget.actual_entered", { line: l?.description, actual }, { eventId: l?.event_id });
     if (l) {
       const ev = await one<EventRow>("SELECT * FROM events WHERE id = $1", [l.event_id]);
@@ -159,7 +188,7 @@ export async function setActual(lineId: string, actual: number | null) {
       if (ev && approved && spent >= approved * 0.9 && !ev.flags.some((f) => f.message.startsWith("Spend alert"))) {
         const msg = `Spend alert: RM${spent.toFixed(2)} is ${Math.round((spent / approved) * 100)}% of the approved RM${approved}.`;
         await update("events", ev.id, { flags: [...ev.flags, { level: "warn", message: msg }] });
-        await insert("notifications", { id: id("ntf"), role: "president", title: `Budget 90% alert, ${ev.title}`, body: msg, link: `/events/${ev.id}/budget` });
+        await notify({ role: "president", societyId: ev.society_id }, `Budget 90% alert, ${ev.title}`, msg, `/events/${ev.id}/budget`);
         await audit(user, "budget.alert", { spent, approved }, { eventId: ev.id });
         return { message: msg };
       }
@@ -170,7 +199,7 @@ export async function setActual(lineId: string, actual: number | null) {
 export async function setFunding(lineId: string, funding: string) {
   return wrap(async () => {
     await onTeam("budget_lines", lineId);
-    await update("budget_lines", lineId, { funding_source: funding });
+    await update("budget_lines", lineId, { funding_source: str(funding, 80) });
   }, ["/events"]);
 }
 
@@ -188,6 +217,7 @@ export async function rerunBudget(eventId: string) {
 
 export async function speakerAction(speakerId: string, action: "outreach" | "replied" | "confirm" | "declined") {
   return wrap(async () => {
+    if (!["outreach", "replied", "confirm", "declined"].includes(action)) throw new Error("Unknown action");
     const user = await onTeam("speakers", speakerId);
     const sp = await one<{ id: string; event_id: string; name: string; email: string | null }>("SELECT * FROM speakers WHERE id = $1", [speakerId]);
     if (!sp) throw new Error("Speaker not found");
@@ -209,8 +239,10 @@ export async function speakerAction(speakerId: string, action: "outreach" | "rep
 export async function addSpeaker(eventId: string, data: { name: string; email: string; headline: string; source_url: string }) {
   return wrap(async () => {
     const user = await onEvent(eventId);
-    await insert("speakers", { id: id("spk"), event_id: eventId, name: data.name, email: data.email || null, headline: data.headline || null, source_url: data.source_url || null, status: "found", source: "manual" });
-    await audit(user, "speaker.added", { name: data.name }, { eventId });
+    const name = str(data?.name, 120);
+    if (!name) throw new Error("Speaker name is required");
+    await insert("speakers", { id: id("spk"), event_id: eventId, name, email: str(data.email, 254) || null, headline: str(data.headline, 300) || null, source_url: safeUrl(data.source_url), status: "found", source: "manual" });
+    await audit(user, "speaker.added", { name }, { eventId });
   }, ["/events"]);
 }
 
@@ -222,39 +254,72 @@ export async function findMoreSpeakers(eventId: string) {
   }, ["/events"]);
 }
 
+/** Event suppliers need the event's team; registry suppliers need the university. */
+async function canEditVendor(vendorId: string) {
+  const v = await one<Vendor & { university_id: string | null }>("SELECT * FROM vendors WHERE id = $1", [vendorId]);
+  if (!v) throw new Error("Vendor not found");
+  if (v.event_id) return { user: await onTeam("vendors", vendorId), v };
+  const user = await requireUser();
+  if (!(await canEditRegistryVendor(user, v))) throw new Error("Only the society that added this supplier can change it");
+  return { user, v };
+}
+
 export async function vendorUpdate(vendorId: string, data: Partial<Pick<Vendor, "rating" | "contract_status" | "contact_email" | "quote" | "name" | "category" | "unit_price" | "unit" | "url">>) {
   return wrap(async () => {
-    const user = await requireUser();
-    const v = await update<Vendor>("vendors", vendorId, data);
-    await audit(user, "vendor.updated", { vendor: v?.name, ...data }, { eventId: v?.event_id });
+    const { user } = await canEditVendor(vendorId);
+    const patch = pick(data ?? {}, ["rating", "contract_status", "contact_email", "quote", "name", "category", "unit_price", "unit", "url"] as const);
+    if (patch.url !== undefined) patch.url = safeUrl(patch.url);
+    for (const k of ["rating", "quote", "unit_price"] as const) if (patch[k] != null && !Number.isFinite(Number(patch[k]))) throw new Error(`Invalid ${k}`);
+    if (patch.contract_status && !["none", "requested", "sent", "signed", "cancelled"].includes(String(patch.contract_status))) throw new Error("Unknown contract status");
+    const v = await update<Vendor>("vendors", vendorId, patch);
+    await audit(user, "vendor.updated", { vendor: v?.name, ...patch }, { eventId: v?.event_id });
   }, ["/vendors", "/events"]);
 }
 
 export async function addVendor(data: { category: string; name: string; url: string; unit_price: number; unit: string; contact_email: string; rating: number | null; university_id?: string }) {
   return wrap(async () => {
     const user = await requireUser();
-    await insert("vendors", { id: id("vnd"), event_id: null, ...data, source: "registry", contract_status: "none" });
-    await audit(user, "vendor.added", { name: data.name, category: data.category });
+    const uni = await one<{ university_id: string }>("SELECT university_id FROM societies WHERE id = $1", [user.society_id]);
+    const universityId = data?.university_id ?? uni?.university_id;
+    if (!universityId) throw new Error("Pick a university");
+    await inUniversity(universityId);
+    const name = str(data.name, 160);
+    if (!name) throw new Error("Supplier name is required");
+    await insert("vendors", {
+      id: id("vnd"), event_id: null, university_id: universityId, added_by_society: user.society_id, category: str(data.category, 40) || "other", name, url: safeUrl(data.url),
+      unit_price: Number(data.unit_price) || 0, unit: str(data.unit, 20) || "unit", contact_email: str(data.contact_email, 254) || null,
+      rating: data.rating == null ? null : Number(data.rating) || null, source: "registry", contract_status: "none",
+    });
+    await audit(user, "vendor.added", { name, category: data.category });
   }, ["/vendors"]);
 }
 
 export async function emailVendor(vendorId: string, eventId: string, subject: string, body: string) {
   return wrap(async () => {
     const user = await onEvent(eventId);
-    const v = await one<Vendor>("SELECT * FROM vendors WHERE id = $1", [vendorId]);
+    const v = await one<Vendor>(
+      `SELECT v.* FROM vendors v WHERE v.id = $1 AND (v.event_id = $2 OR (v.event_id IS NULL AND v.university_id = (SELECT s.university_id FROM events e JOIN societies s ON s.id = e.society_id WHERE e.id = $2)))`,
+      [vendorId, eventId],
+    );
     if (!v) throw new Error("Vendor not found");
+    subject = str(subject, 200);
+    body = str(body, 20_000);
+    if (!subject || !body) throw new Error("Write a subject and a message");
     const rcpt = await vendorRecipient(v, user.society_id);
     const to = rcpt.to;
-    const r = await gate(user, "email.vendor", `Email ${v.name}: ${subject}`, { vendor_id: v.id, event_id: eventId || null, to, subject: `${rcpt.forward ? "[Forward to vendor] " : ""}${subject}`, html: `${rcpt.forward ? forwardNote(v.name) : ""}<p>${body.replace(/\n/g, "<br>")}</p><p>${user.name}</p>`, kind: "vendor" }, { eventId: eventId || null });
+    const r = await gate(user, "email.vendor", `Email ${v.name}: ${subject}`, { vendor_id: v.id, event_id: eventId || null, to, subject: `${rcpt.forward ? "[Forward to vendor] " : ""}${subject}`, html: `${rcpt.forward ? forwardNote(v.name) : ""}<p>${esc(body).replace(/\n/g, "<br>")}</p><p>${esc(user.name)}</p>`, kind: "vendor" }, { eventId });
     return r.status === "blocked" ? `Sent for approval: ${r.reason}` : r.status === "executed" ? "Email sent" : r.error;
   }, ["/vendors", "/events"]);
 }
 
 export async function payDeposit(vendorId: string, eventId: string | null, amount: number) {
   return wrap(async () => {
-    const user = await requireUser();
+    const user = await onTeam("vendors", vendorId);
     const v = await one<Vendor>("SELECT * FROM vendors WHERE id = $1", [vendorId]);
-    if (!v) throw new Error("Vendor not found");
+    if (!v?.event_id) throw new Error("Vendor not found");
+    eventId = v.event_id;
+    amount = Math.round(Number(amount) * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000) throw new Error("Enter a valid amount");
     const r = await gate(user, "payment.deposit", `Pay RM${amount} deposit to ${v.name}`, { vendor_id: vendorId, event_id: eventId, amount }, { eventId, amount });
     if (r.status === "blocked") return `Sent for approval: ${r.reason}`;
     if (r.status === "failed") throw new Error(r.error);
@@ -262,6 +327,7 @@ export async function payDeposit(vendorId: string, eventId: string | null, amoun
   }, ["/vendors", "/events"]);
 }
 
+/** Confirms a deposit: Stripe is asked directly; test checkouts need a team member (and never run in production). */
 export async function completeMockPayment(paymentId: string) {
   return wrap(async () => {
     const p = await one<{ id: string; vendor_id: string; event_id: string; amount: number; provider: string; provider_ref: string; status: string }>("SELECT * FROM payments WHERE id = $1", [paymentId]);
@@ -270,6 +336,9 @@ export async function completeMockPayment(paymentId: string) {
     if (p.provider === "stripe") {
       const s = await retrieveCheckout(p.provider_ref);
       if (s.payment_status !== "paid") throw new Error(`Stripe says: ${s.payment_status}`);
+    } else {
+      if (process.env.NODE_ENV === "production") throw new Error("Test payments are disabled");
+      await onEvent(p.event_id);
     }
     await update("payments", p.id, { status: "paid", paid_at: new Date() });
     await update("vendors", p.vendor_id, { deposit_status: "paid" });
@@ -299,8 +368,8 @@ export async function sync(eventId: string, platform: "luma" | "meetup") {
 
 export async function checkIn(rsvpId: string, value = true) {
   return wrap(async () => {
-    const user = await requireUser();
-    const r = await update<Rsvp>("rsvps", rsvpId, { checked_in: value, checked_in_at: value ? new Date() : null });
+    const user = await onTeam("rsvps", rsvpId);
+    const r = await update<Rsvp>("rsvps", rsvpId, { checked_in: Boolean(value), checked_in_at: value ? new Date() : null });
     await audit(user, value ? "rsvp.checked_in" : "rsvp.check_in_undone", { name: r?.name, ticket: r?.ticket }, { eventId: r?.event_id });
     return r ? `${r.name} ${value ? "checked in" : "unchecked"}` : "Not found";
   }, ["/events", "/checkin"]);
@@ -308,10 +377,11 @@ export async function checkIn(rsvpId: string, value = true) {
 
 export async function checkInByTicket(eventId: string, ticket: string) {
   return wrap(async () => {
-    const r = await one<Rsvp>("SELECT * FROM rsvps WHERE event_id = $1 AND upper(ticket) = upper($2)", [eventId, ticket.trim()]);
-    if (!r) throw new Error(`No ticket ${ticket}`);
+    const user = await onEvent(eventId);
+    const code = str(ticket, 40);
+    const r = await one<Rsvp>("SELECT * FROM rsvps WHERE event_id = $1 AND upper(ticket) = upper($2)", [eventId, code]);
+    if (!r) throw new Error(`No ticket ${code}`);
     if (r.checked_in) return `${r.name} was already checked in`;
-    const user = await requireUser();
     await update("rsvps", r.id, { checked_in: true, checked_in_at: new Date() });
     await audit(user, "rsvp.checked_in", { name: r.name, ticket: r.ticket }, { eventId });
     return `${r.name} checked in`;
@@ -335,7 +405,8 @@ export async function promoteWaitlist(eventId: string) {
 export async function setPromo(itemId: string, status: string, link?: string) {
   return wrap(async () => {
     await onTeam("promo_items", itemId);
-    await update("promo_items", itemId, { status, link: link ?? undefined });
+    if (!["todo", "doing", "done", "scheduled", "posted"].includes(status)) throw new Error("Unknown status");
+    await update("promo_items", itemId, { status, link: link === undefined ? undefined : safeUrl(link) });
   }, ["/events"]);
 }
 
@@ -347,11 +418,11 @@ export async function pushCal(eventId: string) {
   }, ["/events"]);
 }
 
-export async function runSchedulerNow(todayOverride?: string) {
+export async function runSchedulerNow() {
   return wrap(async () => {
     const user = await requireUser();
     if (!isFinal(user)) throw new Error("Only the President/VP can run the scheduler manually");
-    const r = await runScheduler({ todayOverride });
+    const r = await runScheduler({ societyId: user.society_id });
     await audit(user, "scheduler.run", { actions: r.actions.length, today: r.today });
     return { message: r.actions.length ? r.actions.join(" · ") : "Nothing due today", data: r };
   }, ["/"]);
@@ -360,14 +431,20 @@ export async function runSchedulerNow(todayOverride?: string) {
 export async function updateRunsheetItem(itemId: string, data: { activity?: string; owner?: string; notes?: string }) {
   return wrap(async () => {
     await onTeam("runsheet_items", itemId);
-    await update("runsheet_items", itemId, data);
+    const patch = pick(data ?? {}, ["activity", "owner", "notes"] as const);
+    for (const k of Object.keys(patch) as (keyof typeof patch)[]) patch[k] = str(patch[k], 1000);
+    await update("runsheet_items", itemId, patch);
   }, ["/events"]);
 }
 
 export async function updateVolunteer(volId: string, data: { name?: string; phone?: string; emergency?: boolean }) {
   return wrap(async () => {
     await onTeam("volunteers", volId);
-    await update("volunteers", volId, data);
+    const patch = pick(data ?? {}, ["name", "phone", "emergency"] as const);
+    if (patch.name !== undefined) patch.name = str(patch.name, 120);
+    if (patch.phone !== undefined) patch.phone = str(patch.phone, 40);
+    if (patch.emergency !== undefined) patch.emergency = Boolean(patch.emergency);
+    await update("volunteers", volId, patch);
   }, ["/events"]);
 }
 
@@ -375,24 +452,33 @@ export async function updateVolunteer(volId: string, data: { name?: string; phon
 
 export async function registerRsvp(eventId: string, data: { name: string; email: string; dietary: string; accessibility: string }) {
   return wrap(async () => {
-    if (!data.name.trim() || !/\S+@\S+\.\S+/.test(data.email)) throw new Error("Name and a valid email are required");
-    const ev = await one<EventRow>("SELECT * FROM events WHERE id = $1", [eventId]);
-    if (!ev) throw new Error("Event not found");
-    const existing = await one<Rsvp>("SELECT * FROM rsvps WHERE event_id = $1 AND lower(email) = lower($2)", [eventId, data.email]);
-    if (existing) return { message: "You're already registered", data: existing };
+    const name = str(data?.name, 120);
+    const email = str(data?.email, 254).toLowerCase();
+    if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Name and a valid email are required");
+    await rateLimit(`rsvp:${await clientIp()}`, 30, 3600);
+    const ev = await one<EventRow>(`SELECT * FROM events e WHERE e.id = $1 AND e.status <> 'completed' AND ${PUBLISHED_SQL}`, [eventId]);
+    if (!ev) throw new Error("Registration for this event is closed");
+    // Never reveal an existing registration (ticket, dietary needs) to whoever types the email.
+    const existing = await one<Rsvp>("SELECT id FROM rsvps WHERE event_id = $1 AND lower(email) = $2", [eventId, email]);
+    if (existing) return { message: "This email is already registered. Check your inbox for your ticket." };
     const venue = ev.venue_id ? await one<Venue>("SELECT capacity FROM venues WHERE id = $1", [ev.venue_id]) : null;
     const going = Number((await one<{ n: number }>("SELECT count(*)::int AS n FROM rsvps WHERE event_id = $1 AND status = 'going'", [eventId]))?.n ?? 0);
     const status = going >= (venue?.capacity ?? ev.pax) ? "waitlist" : "going";
-    const r = await insert<Rsvp>("rsvps", { id: id("rsv"), event_id: eventId, name: data.name.trim(), email: data.email.trim(), source: "direct", status, ticket: T.ticketCode(), dietary: data.dietary || null, accessibility: data.accessibility || null });
-    await audit({ id: null, name: data.name }, "rsvp.registered", { status, source: "direct" }, { eventId });
+    const r = await insert<Rsvp>("rsvps", { id: id("rsv"), event_id: eventId, name, email, source: "direct", status, ticket: T.ticketCode(), dietary: str(data.dietary, 300) || null, accessibility: str(data.accessibility, 300) || null });
+    await audit({ id: null, name }, "rsvp.registered", { status, source: "direct" }, { eventId });
     return { message: status === "waitlist" ? "Event is full, you're on the waitlist" : "You're registered!", data: r };
   });
 }
 
 export async function submitFeedback(eventId: string, data: { name: string; nps: number; rating: number; liked: string; improve: string }) {
   return wrap(async () => {
-    if (data.nps < 0 || data.nps > 10 || data.rating < 1 || data.rating > 5) throw new Error("Please answer both scores");
-    await insert("feedback", { id: id("fb"), event_id: eventId, name: data.name || null, nps: data.nps, rating: data.rating, liked: data.liked || null, improve: data.improve || null });
+    const nps = Math.round(Number(data?.nps));
+    const rating = Math.round(Number(data?.rating));
+    if (!(nps >= 0 && nps <= 10 && rating >= 1 && rating <= 5)) throw new Error("Please answer both scores");
+    await rateLimit(`feedback:${await clientIp()}`, 20, 3600);
+    const ev = await one(`SELECT 1 FROM events e WHERE e.id = $1 AND ${PUBLISHED_SQL}`, [eventId]);
+    if (!ev) throw new Error("Event not found");
+    await insert("feedback", { id: id("fb"), event_id: eventId, name: str(data.name, 120) || null, nps, rating, liked: str(data.liked, 2000) || null, improve: str(data.improve, 2000) || null });
     return "Thanks for your feedback!";
   });
 }
@@ -401,8 +487,9 @@ export async function submitFeedback(eventId: string, data: { name: string; nps:
 
 export async function uploadSop(universityId: string, title: string, content: string, applyStructure: boolean) {
   return wrap(async () => {
-    const user = await requireUser();
-    if (!canManageSop(user)) throw new Error("Only the President/VP can change the SOP");
+    const user = await inUniversity(universityId, true);
+    content = String(content ?? "").slice(0, 200_000);
+    title = str(title, 200) || "Event SOP";
     if (!content.trim()) throw new Error("The document is empty");
     await insert("sop_documents", { id: id("sop"), university_id: universityId, title, kind: "sop", content, uploaded_by: user.id });
     let msg = "SOP document saved";
@@ -419,8 +506,8 @@ export async function uploadSop(universityId: string, title: string, content: st
 
 export async function saveSopStructure(universityId: string, sop: Sop) {
   return wrap(async () => {
-    const user = await requireUser();
-    if (!canManageSop(user)) throw new Error("Only the President/VP can change the SOP");
+    const user = await inUniversity(universityId, true);
+    if (!sop || typeof sop !== "object" || Array.isArray(sop) || JSON.stringify(sop).length > 500_000) throw new Error("Invalid SOP");
     await update("universities", universityId, { sop });
     await audit(user, "sop.structure_updated", { version: sop.version });
     return "SOP updated";
@@ -431,66 +518,33 @@ export async function onboardUniversity(data: {
   name: string;
   short_name: string;
   sopText: string;
-  society: string;
-  president: { name: string; email: string };
-  advisor: { name: string; email: string };
   venues: { name: string; capacity: number; booking_lead_weeks: number }[];
 }) {
   return wrap(async () => {
     const user = await requireUser();
-    if (!isFinal(user)) throw new Error("Only a President/VP can onboard a university");
-    if (!data.name.trim() || !data.short_name.trim()) throw new Error("University name and short name are required");
-    const uid = `uni_${data.short_name.toLowerCase().replace(/[^a-z0-9]+/g, "")}_${Math.random().toString(36).slice(2, 6)}`;
-    const parsed = parseSopText(data.sopText || "", { ...SUNWAY_SOP, version: "1.0" });
-    await insert("universities", { id: uid, name: data.name.trim(), short_name: data.short_name.trim(), sop: parsed.sop });
-    if (data.sopText.trim()) await insert("sop_documents", { id: id("sop"), university_id: uid, title: `${data.short_name} event SOP`, kind: "sop", content: data.sopText, uploaded_by: user.id });
-    const sid = id("soc");
-    await insert("societies", { id: sid, university_id: uid, name: data.society || `${data.short_name} Student Society` });
-    const mk = (u: { name: string; email: string }, role: string) =>
-      u.name && u.email ? insert("users", { id: id("usr"), society_id: sid, name: u.name, email: u.email, role, department: role === "president" ? "Executive" : null, api_key: `ep_${crypto.randomUUID().replace(/-/g, "")}` }) : null;
-    await mk(data.president, "president");
-    await mk(data.advisor, "faculty_advisor");
-    for (const v of data.venues.filter((x) => x.name)) {
-      await insert("venues", { id: id("ven"), university_id: uid, name: v.name, capacity: v.capacity || 100, setup_styles: ["theatre"], av: ["projector"], cost: 0, booking_lead_weeks: v.booking_lead_weeks || 2 });
-    }
-    await audit(user, "university.onboarded", { university: data.name, sections: parsed.found.sections, lead_times: parsed.found.leadTimes });
-    return { message: `${data.name} onboarded`, data: { id: uid } };
+    if (!isFinal(user)) throw new Error("Only a President/VP can add a university");
+    const name = String(data.name ?? "").trim().slice(0, 160);
+    const short = String(data.short_name ?? "").trim().slice(0, 40);
+    if (!name || !short) throw new Error("University name and short name are required");
+    const uid = `uni_${short.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 20)}_${crypto.randomUUID().slice(0, 6)}`;
+    const sopText = String(data.sopText ?? "").slice(0, 200_000);
+    const parsed = parseSopText(sopText, { ...SUNWAY_SOP, version: "1.0" });
+    await transaction(async () => {
+      await insert("universities", { id: uid, name, short_name: short, sop: parsed.sop, created_by_society: user.society_id });
+      if (sopText.trim()) await insert("sop_documents", { id: id("sop"), university_id: uid, title: `${short} event SOP`, kind: "sop", content: sopText, uploaded_by: user.id });
+      for (const v of (Array.isArray(data.venues) ? data.venues : []).filter((x) => x?.name).slice(0, 100)) {
+        await insert("venues", { id: id("ven"), university_id: uid, name: String(v.name).slice(0, 120), capacity: Number(v.capacity) || 100, setup_styles: ["theatre"], av: ["projector"], cost: 0, booking_lead_weeks: Number(v.booking_lead_weeks) || 2 });
+      }
+    });
+    await audit(user, "university.onboarded", { university: name, sections: parsed.found.sections, lead_times: parsed.found.leadTimes });
+    return { message: `${name} added`, data: { id: uid } };
   }, ["/universities", "/sop"]);
 }
 
 export async function markNotificationsRead() {
   return wrap(async () => {
-    const u: User = await requireUser();
-    await query("UPDATE notifications SET read = true WHERE user_id = $1 OR role = $2", [u.id, u.role]);
-  }, ["/"]);
-}
-
-export async function rotateApiKey() {
-  return wrap(async () => {
     const u = await requireUser();
-    const key = `ep_${crypto.randomUUID().replace(/-/g, "")}`;
-    await update("users", u.id, { api_key: key });
-    await audit(u, "api_key.rotated", {});
-    return "New API key generated";
-  }, ["/settings"]);
-}
-
-export async function getApproval(approvalId: string) {
-  return one<ApprovalRequest>("SELECT * FROM approval_requests WHERE id = $1", [approvalId]);
-}
-
-export async function resetDemo() {
-  return wrap(async () => {
-    const user = await requireUser();
-    if (!isFinal(user)) throw new Error("Only the President/VP can reset demo data");
-    const { seed } = await import("@/lib/seed");
-    const tables = ["universities", "sop_documents", "societies", "users", "venues", "events", "tasks", "speakers", "vendors", "budget_lines", "risks", "approval_requests", "audit_logs", "agent_runs", "emails", "calendar_events", "rsvps", "feedback", "promo_items", "reminders", "runsheet_items", "volunteers", "payments", "notifications", "creatives"];
-    for (const t of tables) await query(`DELETE FROM ${t}`);
-    await seed((sql, params) => query(sql, params));
-    const { ensureDemo, resetDemoState } = await import("@/lib/demo");
-    resetDemoState();
-    await ensureDemo();
-    return "Demo data reset";
+    await query("UPDATE notifications SET read = true WHERE user_id = $1 OR (role = $2 AND society_id = $3)", [u.id, u.role, u.society_id]);
   }, ["/"]);
 }
 
@@ -529,7 +583,7 @@ export async function uploadCreative(creativeId: string, dataUrl: string) {
 export async function saveCreativeCopy(creativeId: string, caption: string, hashtags: string) {
   return wrap(async () => {
     await onTeam("creatives", creativeId);
-    await update("creatives", creativeId, { caption, hashtags, updated_at: new Date() });
+    await update("creatives", creativeId, { caption: str(caption, 5000), hashtags: str(hashtags, 1000), updated_at: new Date() });
   }, ["/events"]);
 }
 
@@ -547,7 +601,7 @@ export async function markCreativePosted(creativeId: string, url: string) {
     const c = await one<{ status: string; event_id: string; kind: string }>("SELECT status, event_id, kind FROM creatives WHERE id = $1", [creativeId]);
     if (!c) throw new Error("Creative not found");
     if (c.status !== "approved" && c.status !== "posted") throw new Error("Get it approved first (SOP: publicity approval before posting)");
-    await update("creatives", creativeId, { status: "posted", posted_url: url || null, updated_at: new Date() });
+    await update("creatives", creativeId, { status: "posted", posted_url: safeUrl(url), updated_at: new Date() });
     await audit(user, "marketing.posted", { creative: c.kind, url }, { eventId: c.event_id });
     return "Marked as posted";
   }, ["/events"]);
@@ -574,6 +628,12 @@ function wouldCycle(taskId: string, deps: string[], all: { id: string; depends_o
 export async function updateTask(taskId: string, patch: TaskPatch) {
   return wrap(async () => {
     const user = await onTeam("tasks", taskId);
+    patch = pick(patch ?? {}, ["title", "status", "owner_id", "due_date", "start_date", "priority", "phase", "depends_on", "description"] as const);
+    if (patch.status && !["todo", "doing", "done"].includes(patch.status)) throw new Error("Unknown status");
+    if (patch.title !== undefined) patch.title = str(patch.title, 300);
+    if (patch.description !== undefined) patch.description = patch.description == null ? null : str(patch.description, 10_000);
+    if (patch.depends_on !== undefined && !Array.isArray(patch.depends_on)) throw new Error("Invalid dependencies");
+    if (patch.owner_id && !(await one("SELECT 1 FROM memberships WHERE user_id = $1 AND society_id = $2", [patch.owner_id, user.society_id]))) throw new Error("Owner must be a member of the society");
     const t = await one<{ id: string; event_id: string; title: string; status: string; depends_on: string[]; risk_id: string | null }>("SELECT * FROM tasks WHERE id = $1", [taskId]);
     if (!t) throw new Error("Task not found");
     const all = await query<{ id: string; title: string; status: string; depends_on: string[] }>("SELECT id, title, status, depends_on FROM tasks WHERE event_id = $1", [t.event_id]);
@@ -596,10 +656,14 @@ export async function updateTask(taskId: string, patch: TaskPatch) {
 export async function createTask(eventId: string, data: { title: string; phase: string; due_date: string; owner_id?: string | null; priority?: string; depends_on?: string[] }) {
   return wrap(async () => {
     const user = await onEvent(eventId);
-    if (!data.title.trim()) throw new Error("Give the task a title");
+    const title = str(data?.title, 300);
+    if (!title) throw new Error("Give the task a title");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data.due_date))) throw new Error("Pick a due date");
+    const owner = data.owner_id && (await one("SELECT 1 FROM memberships WHERE user_id = $1 AND society_id = $2", [data.owner_id, user.society_id])) ? data.owner_id : user.id;
+    const deps = Array.isArray(data.depends_on) ? (await query<{ id: string }>("SELECT id FROM tasks WHERE event_id = $1 AND id = ANY($2::text[])", [eventId, data.depends_on.map(String)])).map((r) => r.id) : [];
     const tid = id("tsk");
-    await insert("tasks", { id: tid, event_id: eventId, title: data.title.trim(), phase: data.phase, due_date: data.due_date, start_date: data.due_date, owner_id: data.owner_id ?? user.id, priority: data.priority ?? "medium", depends_on: data.depends_on ?? [], status: "todo", sort: 500 });
-    await audit(user, "task.created", { task: data.title }, { eventId });
+    await insert("tasks", { id: tid, event_id: eventId, title, phase: str(data.phase, 40) || "planning", due_date: data.due_date, start_date: data.due_date, owner_id: owner, priority: ["low", "medium", "high", "urgent"].includes(String(data.priority)) ? data.priority : "medium", depends_on: deps, status: "todo", sort: 500 });
+    await audit(user, "task.created", { task: title }, { eventId });
     return { message: "Task added", data: { id: tid } };
   }, ["/events"]);
 }
@@ -620,6 +684,10 @@ export async function deleteTask(taskId: string) {
 export async function updateRisk(riskId: string, patch: Partial<{ status: string; likelihood: number; impact: number; mitigation: string; contingency: string; owner_id: string | null; description: string }>) {
   return wrap(async () => {
     const user = await onTeam("risks", riskId);
+    patch = pick(patch ?? {}, ["status", "likelihood", "impact", "mitigation", "contingency", "owner_id", "description"] as const);
+    for (const k of ["likelihood", "impact"] as const) if (patch[k] !== undefined && !(Number(patch[k]) >= 1 && Number(patch[k]) <= 5)) throw new Error(`${k} must be 1 to 5`);
+    for (const k of ["mitigation", "contingency", "description"] as const) if (patch[k] !== undefined) patch[k] = str(patch[k], 5000);
+    if (patch.owner_id && !(await one("SELECT 1 FROM memberships WHERE user_id = $1 AND society_id = $2", [patch.owner_id, user.society_id]))) throw new Error("Owner must be a member of the society");
     const r = await update<{ event_id: string; category: string }>("risks", riskId, patch);
     await audit(user, "risk.updated", { risk: r?.category, ...patch }, { eventId: r?.event_id });
   }, ["/events"]);
@@ -628,8 +696,10 @@ export async function updateRisk(riskId: string, patch: Partial<{ status: string
 export async function createRisk(eventId: string, data: { category: string; description: string; likelihood: number; impact: number; mitigation: string }) {
   return wrap(async () => {
     const user = await onEvent(eventId);
-    if (!data.description.trim()) throw new Error("Describe the risk");
-    await insert("risks", { id: id("rsk"), event_id: eventId, category: data.category || "General", description: data.description, likelihood: data.likelihood, impact: data.impact, mitigation: data.mitigation || "TBD", contingency: null, owner_id: user.id, status: "open" });
+    const description = str(data?.description, 5000);
+    if (!description) throw new Error("Describe the risk");
+    const clamp = (n: unknown) => Math.min(5, Math.max(1, Math.round(Number(n)) || 3));
+    await insert("risks", { id: id("rsk"), event_id: eventId, category: str(data.category, 60) || "General", description, likelihood: clamp(data.likelihood), impact: clamp(data.impact), mitigation: str(data.mitigation, 5000) || "TBD", contingency: null, owner_id: user.id, status: "open" });
     await audit(user, "risk.created", { risk: data.description }, { eventId });
     return "Risk added";
   }, ["/events"]);
@@ -654,15 +724,23 @@ export async function addMitigationTask(riskId: string) {
 export async function deleteVendors(ids: string[]) {
   return wrap(async () => {
     const user = await requireUser();
-    for (const v of ids) await query("DELETE FROM vendors WHERE id = $1 AND event_id IS NULL", [v]);
-    await audit(user, "vendor.removed", { count: ids.length });
-    return `Removed ${ids.length} vendor(s)`;
+    if (!canManageSop(user)) throw new Error("Only the President/VP can remove registry suppliers");
+    const list = (Array.isArray(ids) ? ids : []).map(String).slice(0, 500);
+    const rows = await query<{ id: string; university_id: string | null; added_by_society: string | null }>(
+      "SELECT id, university_id, added_by_society FROM vendors WHERE id = ANY($1::text[]) AND event_id IS NULL",
+      [list],
+    );
+    const allowed: string[] = [];
+    for (const r of rows) if (await canEditRegistryVendor(user, r)) allowed.push(r.id);
+    const gone = allowed.length ? await query("DELETE FROM vendors WHERE id = ANY($1::text[]) RETURNING id", [allowed]) : [];
+    await audit(user, "vendor.removed", { count: gone.length });
+    return `Removed ${gone.length} vendor(s)`;
   }, ["/universities"]);
 }
 
 export async function setRsvpStatus(rsvpId: string, status: string) {
   return wrap(async () => {
-    const user = await requireUser();
+    const user = await onTeam("rsvps", rsvpId);
     if (!["going", "waitlist", "cancelled"].includes(status)) throw new Error("Unknown status");
     const r = await update<Rsvp>("rsvps", rsvpId, { status });
     await audit(user, "rsvp.status", { name: r?.name, status }, { eventId: r?.event_id });
@@ -671,8 +749,7 @@ export async function setRsvpStatus(rsvpId: string, status: string) {
 
 export async function saveTemplate(universityId: string, kind: string, title: string, sectionsText: string, key?: string) {
   return wrap(async () => {
-    const user = await requireUser();
-    if (!canManageSop(user)) throw new Error("Only the President/VP can change templates");
+    const user = await inUniversity(universityId, true);
     const { parseSections } = await import("@/lib/templates");
     const sections = parseSections(sectionsText);
     if (!sections.length) throw new Error("Add at least one section");

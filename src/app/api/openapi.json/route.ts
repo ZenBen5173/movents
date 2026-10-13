@@ -28,7 +28,7 @@ export async function GET() {
   }
   return NextResponse.json({
     openapi: "3.1.0",
-    info: { title: "Movents agent API", version: "1.0.0", description: "Tools WorkBuddy uses to plan campus events. The same tools are exposed over MCP at /api/mcp." },
+    info: { title: "Movents agent API", version: "1.0.0", description: "Tools AI assistants use to plan campus events. The same tools are exposed over MCP at /api/mcp." },
     servers: [{ url: appUrl() }],
     components: { securitySchemes: { bearer: { type: "http", scheme: "bearer" } } },
     security: [{ bearer: [] }],

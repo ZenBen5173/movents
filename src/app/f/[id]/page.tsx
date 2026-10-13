@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { isPublished } from "@/lib/public-events";
 import { one } from "@/lib/db";
 import { fmtDate } from "@/lib/appurl";
 import type { EventRow } from "@/lib/types";
@@ -11,7 +12,7 @@ export const metadata = { title: "Feedback" };
 export default async function FeedbackPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const ev = await one<EventRow>("SELECT * FROM events WHERE id = $1", [id]);
-  if (!ev) notFound();
+  if (!ev || !isPublished(ev)) notFound();
   return (
     <div className="mx-auto min-h-dvh max-w-xl px-5 py-12">
           <BrandMark />

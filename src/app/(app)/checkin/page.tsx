@@ -1,5 +1,5 @@
+import { pageUser } from "@/lib/guard";
 import Link from "next/link";
-import { currentUser } from "@/lib/session";
 import { query } from "@/lib/db";
 import { fmtDate } from "@/lib/appurl";
 import { Empty, PageHeader } from "@/components/app/ui";
@@ -8,7 +8,7 @@ import { visibleSql } from "@/lib/members";
 export const dynamic = "force-dynamic";
 
 export default async function CheckinIndex() {
-  const user = (await currentUser())!;
+  const user = await pageUser();
   const events = await query<{ id: string; title: string; date: string; going: number; inn: number }>(
     `SELECT e.id, e.title, e.date,
       (SELECT count(*)::int FROM rsvps r WHERE r.event_id = e.id AND r.status = 'going') AS going,

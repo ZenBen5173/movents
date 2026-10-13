@@ -1,10 +1,10 @@
+import { pageUser } from "@/lib/guard";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { one, query } from "@/lib/db";
 import { today } from "@/lib/appurl";
 import { overlaps } from "@/lib/planning";
-import { currentUser } from "@/lib/session";
 import { isMember } from "@/lib/members";
 import { VenueCalendar, type Booking } from "@/components/app/venue-calendar";
 import { FloorPlan } from "@/components/app/floor-plans";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 export default async function VenuePage({ params }: { params: Promise<{ id: string; venueId: string }> }) {
   const { id, venueId } = await params;
-  const user = (await currentUser())!;
+  const user = await pageUser();
   const v = await one<Venue>("SELECT * FROM venues WHERE id = $1 AND university_id = $2", [venueId, id]);
   if (!v) notFound();
   const [events, other] = await Promise.all([
@@ -30,7 +30,8 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
   for (const e of events) {
     const ours = e.society_id === user.society_id;
     const clash = events.some((b) => b.id !== e.id && b.date === e.date && overlaps(b, e));
-    bookings.push({ id: e.id, title: e.title, holder: e.society, kind: ours ? "ours" : "society", date: e.date, start: e.start_time, end: e.end_time, clash, href: ours && (await isMember(user, e.id)) ? `/events/${e.id}` : undefined });
+    // Other societies' bookings show as busy time, not their event names.
+    bookings.push({ id: ours ? e.id : `busy_${bookings.length}`, title: ours ? e.title : "Booked", holder: e.society, kind: ours ? "ours" : "society", date: e.date, start: e.start_time, end: e.end_time, clash, href: ours && (await isMember(user, e.id)) ? `/events/${e.id}` : undefined });
   }
   for (const b of other) bookings.push({ id: b.id, title: b.title, holder: b.holder, kind: (b.kind as Booking["kind"]) ?? "society", date: b.date, start: b.start_time, end: b.end_time });
   const facts: [string, React.ReactNode, string][] = [
@@ -48,7 +49,7 @@ export default async function VenuePage({ params }: { params: Promise<{ id: stri
       <div className="grid gap-6 md:grid-cols-[1.3fr_1fr]">
         <div className="relative aspect-[16/9] overflow-hidden rounded-2xl border-[1.5px] border-ink bg-sand shadow-[4px_4px_0_0_#161514]">
           {v.photo_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
+             
             <img src={v.photo_url} alt={v.name} className="size-full object-cover" />
           ) : (
             <div className="grid size-full place-items-center text-muted-foreground"><Icon name="building-2" size={36} /></div>

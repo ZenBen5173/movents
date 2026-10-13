@@ -12,18 +12,37 @@ export function appUrl() {
 }
 
 function secret() {
-  return process.env.APP_SECRET ?? "movents-dev-secret-change-me";
+  const s = process.env.APP_SECRET;
+  if (s && s.length >= 32) return s;
+  if (process.env.NODE_ENV === "production" && process.env.NEXT_PHASE !== "phase-production-build") {
+    throw new Error("APP_SECRET must be set to a random string of at least 32 characters");
+  }
+  return s || "movents-local-development-secret-not-for-production";
 }
 
-/** Signed token for links that work without a login (faculty approval). */
-export function signToken(value: string) {
-  return crypto.createHmac("sha256", secret()).update(value).digest("base64url").slice(0, 32);
+/**
+ * Signed, expiring token for links that work without a login (faculty
+ * approval, uploads, tracking pixels). `value` should name the purpose,
+ * e.g. `faculty:<id>`, so a token for one use can't be replayed for another.
+ */
+export function signToken(value: string, ttlDays = 30) {
+  const exp = Math.floor(Date.now() / 1000) + Math.round(ttlDays * 86400);
+  const sig = crypto.createHmac("sha256", secret()).update(`${value}.${exp}`).digest("base64url").slice(0, 32);
+  return `${exp.toString(36)}.${sig}`;
 }
 
 export function verifyToken(value: string, token: string | null | undefined) {
   if (!token) return false;
-  const expected = signToken(value);
-  return expected.length === token.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(token));
+  const [expPart, sig] = token.split(".");
+  const exp = parseInt(expPart ?? "", 36);
+  if (!sig || !Number.isFinite(exp) || exp < Date.now() / 1000) return false;
+  const expected = crypto.createHmac("sha256", secret()).update(`${value}.${exp}`).digest("base64url").slice(0, 32);
+  return expected.length === sig.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig));
+}
+
+/** A generated document link that works without signing in (for the faculty advisor). */
+export function outputsUrl(eventId: string, file: string, ttlDays = 60) {
+  return `${appUrl()}/api/outputs/${eventId}/${file}?t=${signToken(`outputs:${eventId}:${file}`, ttlDays)}`;
 }
 
 export const fmtRM = (n: number | null | undefined) =>
@@ -48,8 +67,8 @@ export function daysBetween(a: string, b: string) {
   return Math.round((Date.parse(`${b.slice(0, 10)}T00:00:00Z`) - Date.parse(`${a.slice(0, 10)}T00:00:00Z`)) / 86_400_000);
 }
 
-/** Today in Malaysia time, as YYYY-MM-DD. DEMO_TODAY overrides for rehearsals. */
+/** Today in Malaysia time, as YYYY-MM-DD. DEMO_TODAY overrides it outside production. */
 export function today() {
-  if (process.env.DEMO_TODAY) return process.env.DEMO_TODAY;
+  if (process.env.DEMO_TODAY && process.env.NODE_ENV !== "production") return process.env.DEMO_TODAY;
   return new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowUp, Check, Copy, Loader2, Play } from "lucide-react";
@@ -21,8 +22,8 @@ type Person = { id: string; name: string; role: Role; department: string | null 
 const first = (n: string) => n.replace(/^(Dr\.?)\s+/, "").split(/\s+/)[0];
 
 /**
- * Write the brief once: goal, date, pax, budget, team. It goes to WorkBuddy
- * (copy) — WorkBuddy runs the plan through Movents. "Run here" is the offline fallback.
+ * Write the brief once: goal, date, pax, budget, team. It goes to your AI assistant
+ * (copy) — the assistant runs the plan through Movents over MCP. "Run here" is the offline fallback.
  */
 export function PromptBox({ today, people, me }: { today: string; people: Person[]; me: string }) {
   const [prompt, setPrompt] = useState("");
@@ -56,7 +57,7 @@ export function PromptBox({ today, people, me }: { today: string; people: Person
     if (!message) return;
     await navigator.clipboard.writeText(message).catch(() => null);
     setCopied(true);
-    toast.success("Copied. Paste it into WorkBuddy");
+    toast.success("Copied. Paste it into your AI assistant (Claude, ChatGPT, Cursor…)");
     setTimeout(() => setCopied(false), 1600);
   }
 
@@ -128,7 +129,7 @@ export function PromptBox({ today, people, me }: { today: string; people: Person
               whileTap={{ scale: 0.92 }}
               disabled={busy || !message}
               onClick={run}
-              title="Run here without WorkBuddy"
+              title="Run here without an AI assistant"
               aria-label="Run here"
               className="grid size-11 place-items-center rounded-xl border-[1.5px] border-ink/25 text-ink/60 transition-colors hover:border-ink hover:text-ink disabled:opacity-30"
             >
@@ -146,11 +147,17 @@ export function PromptBox({ today, people, me }: { today: string; people: Person
                   {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
                 </motion.span>
               </AnimatePresence>
-              WorkBuddy
+              Copy for AI
             </motion.button>
           </div>
         </div>
       </div>
+      <p className="mt-3 text-center text-xs text-muted-foreground">
+        Paste it into your AI assistant (Claude, ChatGPT, Cursor…) and it plans the event through Movents.{" "}
+        <Link href="/settings" className="font-medium text-tomato-ink underline-offset-2 hover:underline">
+          Connect your assistant
+        </Link>
+      </p>
       <div className="mt-4 flex flex-col gap-2">
         {SUGGESTIONS.map((s, i) => (
           <motion.button

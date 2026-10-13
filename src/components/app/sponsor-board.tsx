@@ -255,7 +255,7 @@ export function SponsorPipeline({ eventId, rows, gated }: { eventId: string; row
                   exit={{ opacity: 0, transition: { duration: 0.12 } }}
                   className="border-b border-border last:border-b-0"
                 >
-                  <Row s={s} gated={gated} onEmail={() => setCompose(s)} accepting={accepting === s.id} onAccept={() => setAccepting(accepting === s.id ? null : s.id)} />
+                  <Row s={s} onEmail={() => setCompose(s)} accepting={accepting === s.id} onAccept={() => setAccepting(accepting === s.id ? null : s.id)} />
                   <AnimatePresence initial={false}>{accepting === s.id && <AcceptForm s={s} onDone={() => setAccepting(null)} />}</AnimatePresence>
                 </motion.li>
               ))}
@@ -303,7 +303,7 @@ function Track({ s }: { s: SponsorRow }) {
   );
 }
 
-function Row({ s, gated, onEmail, accepting, onAccept }: { s: SponsorRow; gated: boolean; onEmail: () => void; accepting: boolean; onAccept: () => void }) {
+function Row({ s, onEmail, accepting, onAccept }: { s: SponsorRow; onEmail: () => void; accepting: boolean; onAccept: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [, start] = useTransition();
   const router = useRouter();

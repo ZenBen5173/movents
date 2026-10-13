@@ -7,7 +7,7 @@ import { Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * While WorkBuddy is building an event over MCP, the event pages show it
+ * While your AI assistant is building an event over MCP, the event pages show it
  * working: its cursor moves over the page, the tab it is on fills from
  * skeletons as each real step lands, and the view follows it tab to tab.
  * Everything here is driven by the run's recorded steps (/api/live).
@@ -18,7 +18,7 @@ export type LiveRun = { id: string; eventId: string | null; title: string | null
 
 const toolKey = (tool: string) => (tool.split("→").pop() ?? tool).trim().split(" ")[0].replace(/^[a-z]+\./, "");
 
-/** Which tab a step happens on, and what WorkBuddy says it is doing. */
+/** Which tab a step happens on, and what the assistant says it is doing. */
 const STEP: { match: RegExp; seg: string; doing: string }[] = [
   { match: /create_event|parse/, seg: "", doing: "setting up the project" },
   { match: /read_sop|sop/, seg: "", doing: "reading the university SOP" },
@@ -44,20 +44,20 @@ export function stepInfo(tool: string) {
   return STEP.find((s) => s.match.test(k)) ?? { seg: "", doing: "working" };
 }
 
-/** WorkBuddy's cursor: Tencent blue pointer, name tag, little robot face, optional status chip. */
-export function WorkBuddyCursor({ x, y, chip, clickKey }: { x: number; y: number; chip?: string | null; clickKey?: string | number }) {
+/** The assistant's cursor: tomato pointer, ink name tag, little robot face, optional status chip. */
+export function AssistantCursor({ x, y, chip, clickKey }: { x: number; y: number; chip?: string | null; clickKey?: string | number }) {
   return (
     <motion.div className="pointer-events-none fixed left-0 top-0 z-[70]" animate={{ x, y }} transition={{ type: "spring", stiffness: 120, damping: 18, mass: 0.8 }}>
       <AnimatePresence>
         {clickKey !== undefined && (
-          <motion.span key={clickKey} initial={{ scale: 0, opacity: 0.6 }} animate={{ scale: 2.6, opacity: 0 }} transition={{ duration: 0.6 }} className="absolute -left-3 -top-3 size-6 rounded-full border-2 border-[#0052D9]" />
+          <motion.span key={clickKey} initial={{ scale: 0, opacity: 0.6 }} animate={{ scale: 2.6, opacity: 0 }} transition={{ duration: 0.6 }} className="absolute -left-3 -top-3 size-6 rounded-full border-2 border-tomato" />
         )}
       </AnimatePresence>
-      <svg width="22" height="24" viewBox="0 0 22 24" className="drop-shadow-[0_2px_3px_rgba(0,82,217,.35)]">
-        <path d="M2 2 L19 12 L11 13.5 L7.5 21 Z" fill="#0052D9" stroke="#fff" strokeWidth="1.6" strokeLinejoin="round" />
+      <svg width="22" height="24" viewBox="0 0 22 24" className="drop-shadow-[0_2px_3px_rgba(22,21,20,.35)]">
+        <path d="M2 2 L19 12 L11 13.5 L7.5 21 Z" fill="#ff5a36" stroke="#161514" strokeWidth="1.6" strokeLinejoin="round" />
       </svg>
       <div className="ml-4 -mt-1 flex items-center gap-1.5">
-        <span className="flex items-center gap-1 rounded-full bg-[#0052D9] py-0.5 pl-0.5 pr-2 text-[11px] font-semibold text-white shadow-md">
+        <span className="flex items-center gap-1 rounded-full bg-ink py-0.5 pl-0.5 pr-2 text-[11px] font-semibold text-white shadow-md">
           <span className="grid size-4 place-items-center rounded-full bg-white">
             <svg viewBox="0 0 16 16" className="size-3.5">
               <path d="M3 6 L4 2 L6.5 4.5 M13 6 L12 2 L9.5 4.5" fill="#fff" stroke="#161514" strokeWidth="1" />
@@ -67,11 +67,11 @@ export function WorkBuddyCursor({ x, y, chip, clickKey }: { x: number; y: number
               <circle cx="9.8" cy="9.1" r="0.9" fill="#3ee0c5" />
             </svg>
           </span>
-          WorkBuddy
+          AI assistant
         </span>
         <AnimatePresence mode="wait">
           {chip && (
-            <motion.span key={chip} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="whitespace-nowrap rounded-full border border-[#0052D9]/30 bg-white px-2 py-0.5 text-[11px] font-medium text-[#0052D9] shadow-sm">
+            <motion.span key={chip} initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="whitespace-nowrap rounded-full border border-ink/20 bg-white px-2 py-0.5 text-[11px] font-medium text-tomato-ink shadow-sm">
               {chip}…
             </motion.span>
           )}
@@ -83,7 +83,7 @@ export function WorkBuddyCursor({ x, y, chip, clickKey }: { x: number; y: number
 
 function Sparkles({ x, y, k }: { x: number; y: number; k: number }) {
   const bits = Array.from({ length: 10 }, (_, i) => i);
-  const colors = ["#ff5a36", "#ffd84d", "#3b6cf6", "#46a758", "#0052D9"];
+  const colors = ["#ff5a36", "#ffd84d", "#3d6cf5", "#46a758", "#cfe3ff"];
   return (
     <div className="pointer-events-none fixed left-0 top-0 z-[69]" style={{ transform: `translate(${x}px, ${y}px)` }}>
       {bits.map((i) => {
@@ -103,24 +103,66 @@ function Sparkles({ x, y, k }: { x: number; y: number; k: number }) {
   );
 }
 
-function usePoll<T>(url: string, ms: number) {
-  const [data, setData] = useState<T | null>(null);
+const FAST_MS = 1500; // a run is live: keep the view close behind it
+const SLOW_MS = 15000; // nothing running: just watch for a new run starting
+const MAX_BACKOFF_MS = 30000;
+
+/**
+ * Polls /api/live for runs. Fast while a run is active, slow when idle, paused
+ * while the tab is hidden (with an immediate fetch on return), and backs off
+ * quietly on errors. In-flight requests are aborted on unmount.
+ */
+export function useLiveRuns(url: string) {
+  const [runs, setRuns] = useState<LiveRun[] | null>(null);
   useEffect(() => {
-    let alive = true;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let ctrl: AbortController | null = null;
+    let fails = 0;
+    const hidden = () => document.visibilityState === "hidden";
+    const schedule = (ms: number) => {
+      clearTimeout(timer);
+      if (!stopped && !hidden()) timer = setTimeout(tick, ms);
+    };
     const tick = async () => {
+      clearTimeout(timer);
+      ctrl?.abort();
+      const c = new AbortController();
+      ctrl = c;
+      let next: number;
       try {
-        const r = await fetch(url, { cache: "no-store" });
-        if (r.ok && alive) setData(await r.json());
-      } catch {}
+        const r = await fetch(url, { cache: "no-store", signal: c.signal });
+        if (!r.ok) throw new Error(`live ${r.status}`);
+        const j = (await r.json()) as { runs?: LiveRun[] };
+        if (stopped || c.signal.aborted) return;
+        const list = j.runs ?? [];
+        fails = 0;
+        setRuns(list);
+        next = list.some((x) => x.status === "running") ? FAST_MS : SLOW_MS;
+      } catch {
+        // Aborted (unmount, hidden tab or a newer tick): that path schedules itself.
+        if (stopped || c.signal.aborted) return;
+        fails += 1;
+        next = Math.min(MAX_BACKOFF_MS, FAST_MS * 2 ** fails);
+      }
+      schedule(next);
     };
-    tick();
-    const t = setInterval(tick, ms);
+    const onVisibility = () => {
+      if (hidden()) {
+        clearTimeout(timer);
+        ctrl?.abort();
+      } else tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    if (!hidden()) tick();
     return () => {
-      alive = false;
-      clearInterval(t);
+      stopped = true;
+      clearTimeout(timer);
+      ctrl?.abort();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [url, ms]);
-  return data;
+  }, [url]);
+  return runs;
 }
 
 /** Pick a spot on something real in the content area, so the cursor looks like it is working on it. */
@@ -136,8 +178,8 @@ function spotIn(host: HTMLElement | null, n: number) {
 }
 
 export function LiveBuild({ eventId }: { eventId: string }) {
-  const data = usePoll<{ runs: LiveRun[] }>(`/api/live?event=${eventId}`, 1000);
-  const run = data?.runs?.[0] ?? null;
+  const runs = useLiveRuns(`/api/live?event=${eventId}`);
+  const run = runs?.[0] ?? null;
   const router = useRouter();
   const path = usePathname();
   const host = useRef<HTMLDivElement>(null);
@@ -155,7 +197,7 @@ export function LiveBuild({ eventId }: { eventId: string }) {
   const done = run && run.status !== "running";
   const seg = path.split(`/events/${eventId}`)[1]?.replace(/^\//, "").split("/")[0] ?? "";
 
-  // A new step landed: follow WorkBuddy to its tab, show the skeleton, then reveal the fresh data.
+  // A new step landed: follow the assistant to its tab, show the skeleton, then reveal the fresh data.
   useEffect(() => {
     if (!current || current.id === lastStep.current) return;
     const first = lastStep.current === null;
@@ -193,25 +235,25 @@ export function LiveBuild({ eventId }: { eventId: string }) {
 
   return (
     <div ref={host}>
-      {/* Header strip: WorkBuddy is building this project, with a progress line. */}
+      {/* Header strip: the assistant is building this project, with a progress line. */}
       <div className="sticky top-14 z-40 -mt-4 mb-4">
-        <div className="flex items-center gap-3 rounded-xl border-[1.5px] border-[#0052D9] bg-white/95 px-3 py-2 shadow-[2px_2px_0_0_#0052D9] backdrop-blur">
+        <div className="flex items-center gap-3 rounded-xl border-[1.5px] border-ink bg-white/95 px-3 py-2 shadow-[2px_2px_0_0_#ff5a36] backdrop-blur">
           <span className="relative flex size-2.5">
-            {live && <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#0052D9] opacity-60" />}
-            <span className={cn("relative inline-flex size-2.5 rounded-full", live ? "bg-[#0052D9]" : "bg-[#46a758]")} />
+            {live && <span className="absolute inline-flex size-full animate-ping rounded-full bg-tomato opacity-60" />}
+            <span className={cn("relative inline-flex size-2.5 rounded-full", live ? "bg-tomato" : "bg-[#46a758]")} />
           </span>
-          <span className="text-sm font-semibold text-[#0052D9]">{live ? "WorkBuddy is building this project" : "WorkBuddy finished"}</span>
+          <span className="text-sm font-semibold text-ink">{live ? "Your assistant is building this project" : "Your assistant finished"}</span>
           {live && info && <span className="hidden text-sm text-muted-foreground sm:inline">{info.doing}…</span>}
           <span className="ml-auto font-mono text-[11px] text-muted-foreground">{doneCount} steps</span>
           {live && (
-            <button onClick={() => setFollow((f) => !f)} className={cn("rounded-md border px-2 py-0.5 font-mono text-[10px] font-bold uppercase", follow ? "border-[#0052D9] bg-[#0052D9] text-white" : "border-ink/20 text-muted-foreground")}>
+            <button onClick={() => setFollow((f) => !f)} className={cn("rounded-md border px-2 py-0.5 font-mono text-[10px] font-bold uppercase", follow ? "border-ink bg-ink text-white" : "border-ink/20 text-muted-foreground")}>
               {follow ? "Following" : "Follow"}
             </button>
           )}
-          <a href={`/runs/${run.id}`} className="text-xs font-medium text-[#0052D9] hover:underline">Trace</a>
+          <a href={`/runs/${run.id}`} className="text-xs font-medium text-tomato-ink hover:underline">Trace</a>
         </div>
-        <div className="mx-3 h-1 overflow-hidden rounded-b bg-[#0052D9]/10">
-          <motion.div className="h-full bg-[#0052D9]" animate={{ width: `${Math.min(100, (doneCount / 24) * 100)}%` }} transition={{ type: "spring", stiffness: 80, damping: 20 }} />
+        <div className="mx-3 h-1 overflow-hidden rounded-b bg-tomato/15">
+          <motion.div className="h-full bg-tomato" animate={{ width: `${Math.min(100, (doneCount / 24) * 100)}%` }} transition={{ type: "spring", stiffness: 80, damping: 20 }} />
         </div>
       </div>
 
@@ -234,8 +276,8 @@ export function LiveBuild({ eventId }: { eventId: string }) {
       <div className="pointer-events-none fixed bottom-5 right-5 z-[60] w-72 space-y-1.5">
         <AnimatePresence initial={false}>
           {recent.map((s) => (
-            <motion.div key={s.id} layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex items-center gap-2 rounded-lg border-[1.5px] border-[#0052D9]/40 bg-white/95 px-2.5 py-1.5 text-xs shadow-md">
-              {s.status === "running" ? <Loader2 className="size-3.5 animate-spin text-[#0052D9]" /> : <Check className="size-3.5 text-[#46a758]" />}
+            <motion.div key={s.id} layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex items-center gap-2 rounded-lg border-[1.5px] border-ink/30 bg-white/95 px-2.5 py-1.5 text-xs shadow-md">
+              {s.status === "running" ? <Loader2 className="size-3.5 animate-spin text-tomato" /> : <Check className="size-3.5 text-[#46a758]" />}
               <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
               <span className="font-mono text-[10px] text-muted-foreground">{toolKey(s.tool)}</span>
             </motion.div>
@@ -243,7 +285,7 @@ export function LiveBuild({ eventId }: { eventId: string }) {
         </AnimatePresence>
       </div>
 
-      {live && <WorkBuddyCursor x={pos.x} y={pos.y} chip={info?.doing ?? "working"} clickKey={current?.id} />}
+      {live && <AssistantCursor x={pos.x} y={pos.y} chip={info?.doing ?? "working"} clickKey={current?.id} />}
       {burst && <Sparkles x={burst.x} y={burst.y} k={burst.k} />}
     </div>
   );

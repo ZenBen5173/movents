@@ -2,7 +2,7 @@ import "server-only";
 import { REFERENCE_SUPPLIERS, SAMPLE_SPEAKERS } from "./reference-data";
 
 /**
- * Web research is WorkBuddy's job: it searches, then saves speakers and quotes
+ * Web research is the AI assistant's job: it searches, then saves speakers and quotes
  * into Movents with `save_speakers` / `save_supplier_quotes`. When it hasn't
  * yet, the planner falls back to placeholder speakers and reference prices.
  */
@@ -13,7 +13,7 @@ export type SpeakerCandidate = {
   source_url: string;
   email: string | null;
   fit_reason: string;
-  source: "workbuddy" | "sample" | "manual";
+  source: "assistant" | "sample" | "manual";
 };
 
 export type SupplierCandidate = {
@@ -23,7 +23,7 @@ export type SupplierCandidate = {
   unit: string;
   unit_price: number | null;
   snippet: string;
-  source: "workbuddy" | "reference";
+  source: "assistant" | "reference";
 };
 
 export const SUPPLIER_CATEGORIES: { key: string; label: string; unit: string }[] = [

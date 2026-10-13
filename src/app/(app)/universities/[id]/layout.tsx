@@ -17,7 +17,7 @@ export default async function UniversityLayout({ children, params }: { children:
       <div className="mt-2 flex items-center gap-4">
         {uniIcon(uni.id) && (
           <span className="grid size-14 shrink-0 place-items-center rounded-xl border-[1.5px] border-ink bg-white p-1.5 shadow-[2px_2px_0_0_#161514]">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+            { }
             <img src={uniIcon(uni.id)!} alt="" className="size-full object-contain" />
           </span>
         )}

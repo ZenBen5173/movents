@@ -22,11 +22,11 @@ export default async function UniversitiesPage() {
         actions={<Link href="/universities/new" className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground"><Plus className="size-4" />Onboard university</Link>}
       />
       <div>
-        {unis.map((u, i) => (
+        {unis.map((u) => (
           <Link key={u.id} href={`/universities/${u.id}`} className="group grid grid-cols-[64px_1fr_auto] items-center gap-4 border-b-[1.5px] border-ink py-5 hover:bg-sand/40">
             <span className="grid size-14 place-items-center rounded-xl border-[1.5px] border-ink bg-white p-1.5 transition-transform group-hover:-rotate-3">
               {uniIcon(u.id) ? (
-                // eslint-disable-next-line @next/next/no-img-element
+                 
                 <img src={uniIcon(u.id)!} alt="" className="size-full object-contain" />
               ) : (
                 <span className="font-display text-lg font-bold">{u.short_name.slice(0, 2)}</span>

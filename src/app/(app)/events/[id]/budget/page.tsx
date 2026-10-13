@@ -7,11 +7,13 @@ import { BudgetCharts } from "@/components/app/budget-charts";
 import { ActionButton } from "@/components/app/action-button";
 import { SupplierPicks } from "@/components/app/supplier-picks";
 import { rerunBudget } from "@/app/actions";
+import { canViewEvent } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function BudgetPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await canViewEvent(id))) return null;
   const b = (await loadBundle(id))!;
   const sop = b.university!.sop;
   const t = budgetTotals(b.lines, sop.budget_rules.contingency_pct);

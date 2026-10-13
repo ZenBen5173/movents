@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
-import { appUrl } from "@/lib/appurl";
+import { outputsUrl } from "@/lib/appurl";
 import { FileBrowser, type FolderNode } from "@/components/app/file-browser";
+import { canViewEvent } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,7 @@ const KIND_LABEL: Record<string, string> = { poster: "Poster", ig_post: "Instagr
 
 export default async function EventFiles({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await canViewEvent(id))) return null;
   const [report, fb, speakers, vendors, creatives] = await Promise.all([
     query("SELECT 1 FROM agent_runs WHERE event_id = $1 AND kind = 'report' LIMIT 1", [id]),
     query("SELECT 1 FROM feedback WHERE event_id = $1 LIMIT 1", [id]),
@@ -16,7 +18,7 @@ export default async function EventFiles({ params }: { params: Promise<{ id: str
     query<{ id: string; kind: string; image_url: string | null }>("SELECT id, kind, image_url FROM creatives WHERE event_id = $1 ORDER BY created_at", [id]),
   ]);
   const b = `/api/outputs/${id}`;
-  const feed = `${appUrl()}${b}/timeline.ics`;
+  const feed = outputsUrl(id, "timeline.ics", 365);
   const hasReport = report.length > 0 || fb.length > 0;
   const clean = (n: string) => n.split(" — ")[0];
 

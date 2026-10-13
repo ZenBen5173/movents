@@ -4,7 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, ChevronRight, ChevronsUpDown, Menu, X } from "lucide-react";
+import { Check, ChevronRight, ChevronsUpDown, LogOut, Menu, Plus, X } from "lucide-react";
+import { toast } from "sonner";
+import { signOut } from "@/app/auth-actions";
+import { switchWorkspaceAction } from "@/app/workspace-actions";
 import type { IconName } from "@/components/ep/icons";
 import Breadcrumb from "@/components/smoothui/breadcrumb";
 import { Bunting, Icon, ROLE_BAND, Wristband, useRowIcon } from "@/components/ep/kit";
@@ -13,7 +16,8 @@ import { cn } from "@/lib/utils";
 import { uniIcon } from "@/lib/uni-logos";
 import { ROLE_LABEL, type Role } from "@/lib/types";
 
-type ShellUser = { id: string; name: string; role: Role; department: string | null };
+type ShellUser = { id: string; name: string; email: string; role: Role; department: string | null };
+type WorkspaceItem = { society_id: string; name: string; university: string; role: Role; department: string | null };
 type Note = { id: string; title: string; body: string; link: string; read: boolean; created_at: string };
 type Project = { id: string; title: string; date: string; status: string; venue: string | null; open_tasks: number };
 
@@ -120,7 +124,7 @@ function UniNode({ u, path, onNavigate }: { u: Uni; path: string; onNavigate?: (
         </button>
         <Link href={base} onClick={onNavigate} className={cn("flex min-w-0 flex-1 items-center gap-2", inside ? "font-semibold" : "text-ink/80")}>
           {uniIcon(u.id) ? (
-            // eslint-disable-next-line @next/next/no-img-element
+             
             <img src={uniIcon(u.id)!} alt="" className="size-[18px] shrink-0 rounded-[4px] bg-white object-contain p-px ring-1 ring-ink/10 transition-transform group-hover:scale-110" />
           ) : (
             <Icon name="landmark" size={14} />
@@ -144,7 +148,7 @@ function UniNode({ u, path, onNavigate }: { u: Uni; path: string; onNavigate?: (
 }
 
 /** Notion-style rail. One hover highlight glides between rows (Sidebar 2.0 technique). */
-function SidebarBody({ path, pending, projects, universities, user, users, society, university, onNavigate }: { path: string; pending: number; projects: Project[]; universities: Uni[]; user: ShellUser; users: ShellUser[]; society: string; university: string; onNavigate?: () => void }) {
+function SidebarBody({ path, pending, projects, universities, user, workspaces, activeSociety, society, university, onNavigate }: { path: string; pending: number; projects: Project[]; universities: Uni[]; user: ShellUser; workspaces: WorkspaceItem[]; activeSociety: string; society: string; university: string; onNavigate?: () => void }) {
   const host = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState<{ top: number; height: number } | null>(null);
   const track = (e: React.PointerEvent) => {
@@ -157,7 +161,7 @@ function SidebarBody({ path, pending, projects, universities, user, users, socie
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2.5 px-3 pb-3 pt-4">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        { }
         <img src="/movents-logo.svg" alt="Movents" className="size-10 shrink-0 transition-transform duration-300 hover:-rotate-6 hover:scale-105" />
         <div className="min-w-0 leading-tight">
           <p className="font-display text-[15px] font-bold">Movents</p>
@@ -193,13 +197,13 @@ function SidebarBody({ path, pending, projects, universities, user, users, socie
         </div>
       </div>
       <div className="border-t border-border p-2">
-        <AccountSwitcher user={user} users={users} />
+        <UserMenu user={user} workspaces={workspaces} activeSociety={activeSociety} />
       </div>
     </div>
   );
 }
 
-function AccountSwitcher({ user, users }: { user: ShellUser; users: ShellUser[] }) {
+function UserMenu({ user, workspaces, activeSociety }: { user: ShellUser; workspaces: WorkspaceItem[]; activeSociety: string }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const ref = useRef<HTMLDivElement>(null);
@@ -209,13 +213,15 @@ function AccountSwitcher({ user, users }: { user: ShellUser; users: ShellUser[] 
     return () => document.removeEventListener("mousedown", close);
   }, []);
   async function switchTo(id: string) {
-    await fetch("/api/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ userId: id }) });
+    const r = await switchWorkspaceAction(id);
+    if (!r.ok) return toast.error(r.error);
     setOpen(false);
+    router.push("/");
     router.refresh();
   }
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2.5 rounded-lg p-2 text-left transition-colors hover:bg-sand/70">
+      <button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full items-center gap-2.5 rounded-lg p-2 text-left transition-colors hover:bg-sand/70">
         <span className="grid size-8 shrink-0 place-items-center rounded-full border-[1.5px] border-ink bg-card text-[11px] font-bold">{initials(user.name)}</span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold">{user.name}</span>
@@ -232,24 +238,31 @@ function AccountSwitcher({ user, users }: { user: ShellUser; users: ShellUser[] 
             transition={SPRING.snappy}
             className="absolute bottom-full left-0 z-50 mb-2 w-72 rounded-2xl border-[1.5px] border-ink bg-card p-2 shadow-[4px_4px_0_0_#161514]"
           >
-            <p className="mono-label px-2 pb-2 pt-1 text-[10px] text-muted-foreground">Switch wristband</p>
-            {users.map((u, i) => (
-              <motion.button
-                key={u.id}
-                initial={{ opacity: 0, x: -6 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.03 }}
-                onClick={() => switchTo(u.id)}
+            <p className="truncate px-2 pb-2 pt-1 text-xs text-muted-foreground">{user.email}</p>
+            <p className="mono-label px-2 pb-1 text-[10px] text-muted-foreground">Societies</p>
+            {workspaces.map((w) => (
+              <button
+                key={w.society_id}
+                onClick={() => w.society_id !== activeSociety && switchTo(w.society_id)}
                 className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-sand/60"
               >
-                <span className={cn("h-7 w-1.5 rounded-full", ROLE_BAND[u.role].bg)} />
+                <span className={cn("h-7 w-1.5 rounded-full", ROLE_BAND[w.role].bg)} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{u.name}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">{ROLE_LABEL[u.role]}{u.department ? ` · ${u.department}` : ""}</span>
+                  <span className="block truncate text-sm font-medium">{w.name}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">{ROLE_LABEL[w.role]} · {w.university}</span>
                 </span>
-                {u.id === user.id ? <Check className="size-4 text-tomato" /> : <span className="mono-label text-[9px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">wear</span>}
-              </motion.button>
+                {w.society_id === activeSociety && <Check className="size-4 text-tomato" />}
+              </button>
             ))}
+            <Link href="/onboarding?new=1" className="mt-1 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-sand/60">
+              <Plus className="size-4" /> New society
+            </Link>
+            <div className="my-1 h-px bg-border" />
+            <form action={signOut}>
+              <button className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-sand/60">
+                <LogOut className="size-4" /> Sign out
+              </button>
+            </form>
           </motion.div>
         )}
       </AnimatePresence>
@@ -319,7 +332,8 @@ function crumbs(path: string, projects: Project[], unis: Uni[]) {
 
 export function AppShell({
   user,
-  users,
+  workspaces,
+  activeSociety,
   pendingForMe,
   notifications,
   society,
@@ -329,7 +343,8 @@ export function AppShell({
   children,
 }: {
   user: ShellUser;
-  users: ShellUser[];
+  workspaces: WorkspaceItem[];
+  activeSociety: string;
   pendingForMe: number;
   notifications: Note[];
   society: string;
@@ -341,7 +356,7 @@ export function AppShell({
   const path = usePathname();
   const [mobile, setMobile] = useState(false);
   const items = useMemo(() => crumbs(path, projects, universities), [path, projects, universities]);
-  const body = { path, pending: pendingForMe, projects, universities, user, users, society, university };
+  const body = { path, pending: pendingForMe, projects, universities, user, workspaces, activeSociety, society, university };
   const run = useRowIcon();
   return (
     <div className="flex min-h-dvh">

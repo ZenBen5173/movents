@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
 import { CalendarDays, Clock, MapPin, Users } from "lucide-react";
 import { one, query } from "@/lib/db";
+import { currentUser } from "@/lib/session";
+import { isMember } from "@/lib/members";
+import { isPublished } from "@/lib/public-events";
 import { fmtDate } from "@/lib/appurl";
 import type { EventRow, Venue } from "@/lib/types";
 import { RsvpForm } from "./rsvp-form";
@@ -17,8 +20,15 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function PublicEvent({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ via?: string }> }) {
   const { id } = await params;
   const { via } = await searchParams;
-  const ev = await one<EventRow & { society: string }>("SELECT e.*, s.name AS society FROM events e JOIN societies s ON s.id = e.society_id WHERE e.id = $1", [id]);
+  const ev = await one<EventRow & { society: string; university: string }>(
+    "SELECT e.*, s.name AS society, u.name AS university FROM events e JOIN societies s ON s.id = e.society_id JOIN universities u ON u.id = s.university_id WHERE e.id = $1",
+    [id],
+  );
   if (!ev) notFound();
+  if (!isPublished(ev)) {
+    const user = await currentUser();
+    if (!user || !(await isMember(user, id))) notFound();
+  }
   const venue = ev.venue_id ? await one<Venue>("SELECT * FROM venues WHERE id = $1", [ev.venue_id]) : null;
   const going = Number((await one<{ n: number }>("SELECT count(*)::int AS n FROM rsvps WHERE event_id = $1 AND status = 'going'", [id]))?.n ?? 0);
   const speakers = await query<{ name: string; headline: string | null }>("SELECT name, headline FROM speakers WHERE event_id = $1 AND status = 'confirmed'", [id]);
@@ -30,13 +40,13 @@ export default async function PublicEvent({ params, searchParams }: { params: Pr
       <div className="relative overflow-hidden border-b border-border bg-[radial-gradient(70%_80%_at_20%_0%,color-mix(in_oklab,var(--primary)_22%,transparent),transparent)]">
         <div className="mx-auto max-w-3xl px-5 pb-10 pt-12">
           <BrandMark />
-          {via && <p className="mb-3 inline-flex rounded-full border border-border bg-card px-2.5 py-0.5 text-xs text-muted-foreground">via {via === "luma" ? "Luma" : "Meetup"} (demo page)</p>}
+          {via && <p className="mb-3 inline-flex rounded-full border border-border bg-card px-2.5 py-0.5 text-xs text-muted-foreground">via {via === "luma" ? "Luma" : "Meetup"}</p>}
           <p className="text-sm font-medium text-primary">{ev.society}</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight md:text-4xl">{ev.title}</h1>
           <div className="mt-4 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
             <span className="inline-flex items-center gap-2"><CalendarDays className="size-4" />{fmtDate(ev.date)}</span>
             <span className="inline-flex items-center gap-2"><Clock className="size-4" />{ev.start_time} to {ev.end_time}</span>
-            <span className="inline-flex items-center gap-2"><MapPin className="size-4" />{venue ? `${venue.name}, ${venue.location ?? "Sunway University"}` : "Venue TBC"}</span>
+            <span className="inline-flex items-center gap-2"><MapPin className="size-4" />{venue ? `${venue.name}, ${venue.location ?? ev.university}` : "Venue TBC"}</span>
             <span className="inline-flex items-center gap-2"><Users className="size-4" />{left > 0 ? `${left} seats left` : "Full, join the waitlist"}</span>
           </div>
         </div>
@@ -54,7 +64,7 @@ export default async function PublicEvent({ params, searchParams }: { params: Pr
         </div>
         <div className="flex flex-col-reverse gap-4 md:flex-col">
           {poster && (
-            // eslint-disable-next-line @next/next/no-img-element
+             
             <img src={`/api/creatives/${poster.id}/image?v=${new Date(poster.updated_at).getTime()}`} alt={`${ev.title} poster`} className="w-full rounded-2xl border border-border shadow-sm" />
           )}
           <RsvpForm eventId={id} full={left === 0} />

@@ -83,7 +83,7 @@ export function VendorGallery({ vendors, rows }: { vendors: GalleryVendor[]; row
               <motion.li key={v.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
                 <a href={v.url ?? "#"} target="_blank" rel="noreferrer" className="group block">
                   <div className="relative aspect-[4/3] overflow-hidden rounded-xl border-[1.5px] border-ink bg-sand shadow-[3px_3px_0_0_#161514] transition-all group-hover:-translate-y-0.5 group-hover:shadow-[5px_5px_0_0_#161514]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    { }
                     <img src={v.photo} alt="" loading="lazy" className="size-full object-cover transition-transform duration-500 group-hover:scale-105" />
                     {v.unit_price != null && (
                       <span className="absolute left-3 top-3 rounded-md border-[1.5px] border-ink bg-card px-2 py-0.5 font-mono text-xs font-bold">

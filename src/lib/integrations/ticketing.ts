@@ -1,33 +1,30 @@
 import "server-only";
 
 /**
- * Luma + Meetup clients. Each has a real API path (used when its key is set)
- * and a mock path that behaves the same way against our own public event page.
+ * Luma + Meetup clients, used when their keys are set. Without them the
+ * event is published on its own Movents registration page instead.
  */
 
-export type PublishResult = { id: string; url: string; mode: "live" | "mock" };
+export type PublishResult = { id: string; url: string; mode: "live" | "movents" };
 export type RemoteGuest = { name: string; email: string; status: "going" | "waitlist" | "cancelled"; checked_in: boolean; dietary?: string | null; accessibility?: string | null };
 
 type EventInput = { id: string; title: string; description: string; date: string; startTime: string; endTime: string; venue: string; capacity: number };
 
 const TZ_OFFSET = "+08:00";
 
-function appUrl() {
-  return process.env.APP_URL ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-}
+import { appUrl } from "../appurl";
 
 // ---------------------------------------------------------------- Luma
 
 const LUMA_BASE = () => process.env.LUMA_API_BASE ?? "https://public-api.lu.ma/public/v1";
 
-export function lumaMode() {
-  return process.env.LUMA_API_KEY ? "live" : "mock";
+/** "movents" = not connected: the event's own Movents registration page is used instead. */
+export function lumaMode(): "live" | "movents" {
+  return process.env.LUMA_API_KEY ? "live" : "movents";
 }
 
 export async function lumaCreateEvent(ev: EventInput): Promise<PublishResult> {
-  if (lumaMode() === "mock") {
-    return { id: `luma_mock_${ev.id}`, url: `${appUrl()}/e/${ev.id}?via=luma`, mode: "mock" };
-  }
+  if (lumaMode() === "movents") return { id: `movents_${ev.id}`, url: `${appUrl()}/e/${ev.id}`, mode: "movents" };
   const res = await fetch(`${LUMA_BASE()}/event/create`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-luma-api-key": process.env.LUMA_API_KEY! },
@@ -54,7 +51,7 @@ export async function lumaGuests(apiId: string): Promise<RemoteGuest[]> {
     const url = new URL(`${LUMA_BASE()}/event/get-guests`);
     url.searchParams.set("event_api_id", apiId);
     if (cursor) url.searchParams.set("pagination_cursor", cursor);
-    const res = await fetch(url, { headers: { "x-luma-api-key": process.env.LUMA_API_KEY! } });
+    const res = await fetch(url, { headers: { "x-luma-api-key": process.env.LUMA_API_KEY! }, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(`Luma guests ${res.status}`);
     const json = (await res.json()) as {
       entries: { guest: { name: string; email: string; approval_status: string; checked_in_at: string | null } }[];
@@ -76,8 +73,8 @@ export async function lumaGuests(apiId: string): Promise<RemoteGuest[]> {
 
 // ---------------------------------------------------------------- Meetup
 
-export function meetupMode() {
-  return process.env.MEETUP_ACCESS_TOKEN && process.env.MEETUP_GROUP_URLNAME ? "live" : "mock";
+export function meetupMode(): "live" | "movents" {
+  return process.env.MEETUP_ACCESS_TOKEN && process.env.MEETUP_GROUP_URLNAME ? "live" : "movents";
 }
 
 async function meetupGql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
@@ -93,9 +90,7 @@ async function meetupGql<T>(query: string, variables: Record<string, unknown>): 
 }
 
 export async function meetupCreateEvent(ev: EventInput): Promise<PublishResult> {
-  if (meetupMode() === "mock") {
-    return { id: `meetup_mock_${ev.id}`, url: `${appUrl()}/e/${ev.id}?via=meetup`, mode: "mock" };
-  }
+  if (meetupMode() === "movents") return { id: `movents_${ev.id}`, url: `${appUrl()}/e/${ev.id}`, mode: "movents" };
   const [sh, sm] = ev.startTime.split(":").map(Number);
   const [eh, em] = ev.endTime.split(":").map(Number);
   const minutes = eh * 60 + em - (sh * 60 + sm);
@@ -128,37 +123,4 @@ export async function meetupGuests(eventId: string): Promise<RemoteGuest[]> {
     status: e.node.status === "WAITLIST" ? "waitlist" : e.node.status === "NO" ? "cancelled" : "going",
     checked_in: e.node.status === "ATTENDED",
   }));
-}
-
-// ---------------------------------------------------------------- Mock guests
-
-const FIRST = ["Aiman", "Mei Ling", "Ravi", "Nur", "Jun Hao", "Siti", "Kavitha", "Hafiz", "Chloe", "Darren", "Farah", "Ganesh", "Hui Min", "Irfan", "Jasmine", "Kumar", "Li Wei", "Marcus", "Nadia", "Omar", "Pei Shan", "Qistina", "Rajesh", "Sarah", "Tan", "Umar", "Vanessa", "Wan", "Xin Yi", "Yusuf", "Zara"];
-const LAST = ["Abdullah", "Tan", "Lim", "Wong", "Raj", "Ismail", "Lee", "Chong", "Krishnan", "Ng", "Hassan", "Ong", "Yap", "Rahman", "Teo", "Goh"];
-const DIET = [null, null, null, null, null, null, "Vegetarian", "No beef", "Vegan", "Nut allergy", "Halal"];
-const ACCESS = [null, null, null, null, null, null, null, null, null, null, null, null, "Wheelchair access", "Hearing loop"];
-
-/** Deterministic pseudo-random so a re-sync does not duplicate or reshuffle guests. */
-function rng(seed: number) {
-  let s = seed >>> 0;
-  return () => {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 2 ** 32;
-  };
-}
-
-export function mockGuests(eventId: string, count: number, source: "luma" | "meetup", showRate = 0.68): RemoteGuest[] {
-  const r = rng([...eventId + source].reduce((a, c) => a * 31 + c.charCodeAt(0), 7));
-  return Array.from({ length: count }, (_, i) => {
-    const name = `${FIRST[Math.floor(r() * FIRST.length)]} ${LAST[Math.floor(r() * LAST.length)]}`;
-    return {
-      name,
-      email: `${name.toLowerCase().replace(/[^a-z]+/g, ".")}.${source}${i}@student.example.edu.my`,
-      ...(() => {
-        const status: RemoteGuest["status"] = r() < 0.06 ? "cancelled" : "going";
-        return { status, checked_in: status === "going" && r() < showRate };
-      })(),
-      dietary: DIET[Math.floor(r() * DIET.length)],
-      accessibility: ACCESS[Math.floor(r() * ACCESS.length)],
-    };
-  });
 }

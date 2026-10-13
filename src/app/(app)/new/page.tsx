@@ -1,7 +1,7 @@
+import { pageUser } from "@/lib/guard";
 import Link from "next/link";
 import { query } from "@/lib/db";
 import { today } from "@/lib/appurl";
-import { currentUser } from "@/lib/session";
 import { visibleSql } from "@/lib/members";
 import type { AgentRun, Role } from "@/lib/types";
 import { PromptBox } from "@/components/app/prompt-box";
@@ -16,7 +16,7 @@ const ago = (iso: string) => {
 };
 
 export default async function NewEvent() {
-  const user = (await currentUser())!;
+  const user = await pageUser();
   const [runs, people] = await Promise.all([
     query<AgentRun & { by: string }>(
       `SELECT r.*, u.name AS by FROM agent_runs r LEFT JOIN users u ON u.id = r.started_by
@@ -24,7 +24,7 @@ export default async function NewEvent() {
        ORDER BY r.created_at DESC LIMIT 20`,
       [user.id],
     ),
-    query<{ id: string; name: string; role: Role; department: string | null }>("SELECT id, name, role, department FROM users WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]),
+    query<{ id: string; name: string; role: Role; department: string | null }>("SELECT id, name, role, department FROM society_members WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]),
   ]);
   return (
     <div className="grid gap-10 pt-6 lg:grid-cols-[1fr_260px]">
@@ -46,7 +46,7 @@ export default async function NewEvent() {
                 <span className="min-w-0 flex-1">
                   <span className="line-clamp-2 text-[13px] leading-snug transition-transform group-hover:translate-x-0.5">{r.prompt}</span>
                   <span className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
-                    {r.source === "workbuddy" && <span className="rounded bg-ticket-blue px-1 text-white">WB</span>}
+                    {r.source !== "builtin" && <span className="rounded bg-ticket-blue px-1 text-white">AI</span>}
                     {r.by?.split(" ")[0]} · {ago(String(r.created_at))}
                   </span>
                 </span>

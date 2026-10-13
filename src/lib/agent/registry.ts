@@ -3,7 +3,7 @@ import { Run } from "./run";
 import * as T from "./tools";
 import { execute, classify } from "./pipelines";
 import { parsePrompt } from "../planning";
-import { appUrl, signToken, today } from "../appurl";
+import { appUrl, outputsUrl, signToken, today } from "../appurl";
 import { one, query } from "../db";
 import { decideApproval } from "../actions";
 import { runScheduler } from "../scheduler";
@@ -11,9 +11,11 @@ import { loadBundle, budgetTotals } from "../docs/builders";
 import { generateKit, imageHref, needsImage, refreshPrompts, setImage } from "../marketing";
 import { update as updateRow } from "../db";
 import type { AgentRun, Creative, StepStatus, User } from "../types";
-import { addMembers, assertMember, assertMemberOf, listMembers, removeMember, resolvePeople, visibleSql } from "../members";
+import { addMembers, assertMember, assertMemberOf, listMembers, removeMember, resolvePeople, seesAll, visibleSql } from "../members";
 import { offerLabel, outreachSponsors, recordSponsor, saveSponsors, type Decision, type SponsorInput } from "../sponsors";
 import { audit } from "../audit";
+import { isFinal } from "../rbac";
+import { validateArgs } from "./validate";
 import type { Sponsor } from "../types";
 
 type Args = Record<string, unknown>;
@@ -24,24 +26,29 @@ type Tool = {
   run: (args: Args, user: User) => Promise<unknown>;
 };
 
+/** MCP tool annotations: clients use them to decide when to ask the user before calling. */
+export type ToolAnnotations = { title: string; readOnlyHint: boolean; destructiveHint: boolean; idempotentHint: boolean; openWorldHint: boolean };
+
 const str = (description: string) => ({ type: "string", description });
 const ev = { event_id: str("Event id (evt_...) returned by create_event") };
 const runId = { run_id: str("Optional agent run id from start_run, when given, this call is recorded as a step in the live trace") };
 
+/** Links to every generated file. Files carry a 7-day signed token so the assistant (or anyone the user shares them with) can open them. */
 function outputs(eventId: string) {
   const base = appUrl();
+  const f = (file: string) => outputsUrl(eventId, file, 7);
   return {
     dashboard: `${base}/events/${eventId}`,
-    proposal_pdf: `${base}/api/outputs/${eventId}/proposal.pdf`,
-    proposal_docx: `${base}/api/outputs/${eventId}/proposal.docx`,
-    budget_xlsx: `${base}/api/outputs/${eventId}/budget.xlsx`,
-    budget_csv: `${base}/api/outputs/${eventId}/budget.csv`,
-    risks_xlsx: `${base}/api/outputs/${eventId}/risks.xlsx`,
-    risks_pdf: `${base}/api/outputs/${eventId}/risks.pdf`,
-    runsheet_pdf: `${base}/api/outputs/${eventId}/runsheet.pdf`,
-    timeline_ics: `${base}/api/outputs/${eventId}/timeline.ics`,
-    report_pdf: `${base}/api/outputs/${eventId}/report.pdf`,
-    report_docx: `${base}/api/outputs/${eventId}/report.docx`,
+    proposal_pdf: f("proposal.pdf"),
+    proposal_docx: f("proposal.docx"),
+    budget_xlsx: f("budget.xlsx"),
+    budget_csv: f("budget.csv"),
+    risks_xlsx: f("risks.xlsx"),
+    risks_pdf: f("risks.pdf"),
+    runsheet_pdf: f("runsheet.pdf"),
+    timeline_ics: f("timeline.ics"),
+    report_pdf: f("report.pdf"),
+    report_docx: f("report.docx"),
     marketing_kit: `${base}/events/${eventId}/promotion`,
     audit_log: `${base}/audit?event=${eventId}`,
   };
@@ -53,7 +60,7 @@ async function traced(user: User, args: Args, name: string, tool: string, fn: ()
   const run = rid ? await Run.load(rid, user) : null;
   if (!run) return fn();
   if (args.event_id && !run.eventId) await run.setEvent(String(args.event_id));
-  return run.step(name, `workbuddy → ${tool}`, args, async () => {
+  return run.step(name, `assistant → ${tool}`, args, async () => {
     const out = await fn();
     return { output: out, ...describe(out) };
   }).then((r) => r.output);
@@ -104,7 +111,7 @@ const ALL_TOOLS: Tool[] = [
     run: async (a, user) => {
       const brief = String(a.brief);
       const p = parsePrompt(brief, today());
-      const people = await query<{ name: string; department: string | null }>("SELECT name, department FROM users WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]);
+      const people = await query<{ name: string; department: string | null }>("SELECT name, department FROM society_members WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]);
       const questions: string[] = [];
       if (p.missing.includes("date")) questions.push("What date (and time) is the event?");
       if (p.missing.includes("pax")) questions.push("Roughly how many people are you expecting?");
@@ -114,7 +121,7 @@ const ALL_TOOLS: Tool[] = [
       return {
         understood: { title: p.title, date: p.missing.includes("date") ? null : p.date, time: `${p.startTime} to ${p.endTime}`, pax: p.missing.includes("pax") ? null : p.pax, budget_rm: p.missing.includes("budget") ? null : p.budget, campus: p.university, team: p.team, preferred_suppliers: p.suppliers },
         questions,
-        defaults_if_user_says_you_decide: { date: p.date, pax: p.pax, budget_rm: p.budget, time: `${p.startTime} to ${p.endTime}`, campus: "Sunway" },
+        defaults_if_user_says_you_decide: { date: p.date, pax: p.pax, budget_rm: p.budget, time: `${p.startTime} to ${p.endTime}`, campus: (await one<{ short_name: string }>("SELECT u.short_name FROM societies s JOIN universities u ON u.id = s.university_id WHERE s.id = $1", [user.society_id]))?.short_name ?? null },
         optional_to_ask: p.suppliers.length ? [] : ["Any suppliers you want to use (e.g. a caterer)?"],
         next: questions.length ? "Ask the user these questions in one message, then plan end to end." : "Everything needed is here. Plan end to end now (start_run first).",
       };
@@ -124,7 +131,7 @@ const ALL_TOOLS: Tool[] = [
     name: "list_society_members",
     description: "People in the caller's society (name, role, department, email). Use to pick an event team.",
     inputSchema: { type: "object", properties: {} },
-    run: async (_, user) => query("SELECT name, role, department, email FROM users WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]),
+    run: async (_, user) => query("SELECT name, role, department, email FROM society_members WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]),
   },
   {
     name: "list_my_events",
@@ -140,10 +147,15 @@ const ALL_TOOLS: Tool[] = [
       const eventId = String(a.event_id);
       const add = Array.isArray(a.add) ? (a.add as string[]) : [];
       const rem = Array.isArray(a.remove) ? (a.remove as string[]) : [];
+      if (add.length || rem.length) {
+        const lead = await one("SELECT 1 FROM event_members WHERE event_id = $1 AND user_id = $2 AND role IN ('lead','colead')", [eventId, user.id]);
+        if (!lead && !seesAll(user)) throw new Error("Only the event lead (or President/VP) can change the team");
+      }
       const added = await resolvePeople(user.society_id ?? "", add);
       await addMembers(eventId, added.ids, user.id);
       const removed = await resolvePeople(user.society_id ?? "", rem);
-      for (const uid of removed.ids) await removeMember(eventId, uid);
+      const leadRow = await one<{ user_id: string }>("SELECT user_id FROM event_members WHERE event_id = $1 AND role = 'lead'", [eventId]);
+      for (const uid of removed.ids) if (uid !== leadRow?.user_id) await removeMember(eventId, uid);
       return { team: (await listMembers(eventId)).map((m) => ({ name: m.name, role: m.member_role, department: m.department })), not_found: [...added.unknown, ...removed.unknown] };
     },
   },
@@ -163,7 +175,7 @@ const ALL_TOOLS: Tool[] = [
   },
   {
     name: "save_sponsors",
-    description: "Save sponsors YOU found with your own web search (Malaysian companies that fit the event topic: tech, banks, telcos, F&B...). Skips companies already on the event. Sponsors UI: /events/<event_id>/sponsors.",
+    description: "Save sponsors you found with your own web search (local companies that fit the event topic: tech, banks, telcos, F&B...). Skips companies already on the event. If you cannot search the web, skip this step. Sponsors UI: /events/<event_id>/sponsors.",
     inputSchema: { type: "object", properties: { ...ev, sponsors: { type: "array", items: { type: "object", properties: { company: str("Company name"), website: str("Company website"), contact_name: str("Contact person, if found"), contact_email: str("Partnerships / marketing email, if public"), industry: str("e.g. Banking, Technology, F&B, Telco"), ask: str('What to ask for, e.g. "RM3,000" or "Coffee for 150 pax"'), fit_reason: str("Why they fit this event") }, required: ["company"] } }, ...runId }, required: ["event_id", "sponsors"] },
     run: (a, u) => traced(u, a, "Save sponsors from web search", "save_sponsors", async () => { const r = await saveSponsors(String(a.event_id), (a.sponsors as SponsorInput[]) ?? []); return { saved: r.length, sponsors: r.map((s) => ({ sponsor_id: s.id, company: s.company })) }; }),
   },
@@ -189,7 +201,7 @@ const ALL_TOOLS: Tool[] = [
     name: "send_sponsor_outreach",
     description: "Email the sponsorship invitation with the event proposal (PDF) attached to every 'found' sponsor, or only sponsor_ids. Role-gated: committee members' emails are queued for Programmes Director approval.",
     inputSchema: { type: "object", properties: { ...ev, sponsor_ids: { type: "array", items: { type: "string" }, description: "Optional spn_... ids; default all not yet contacted" }, ...runId }, required: ["event_id"] },
-    run: (a, u) => traced(u, a, "Send sponsor outreach", "send_sponsor_outreach (outlook)", () => outreachSponsors(u, String(a.event_id), Array.isArray(a.sponsor_ids) ? (a.sponsor_ids as string[]) : null, (a.run_id as string) ?? null)),
+    run: (a, u) => traced(u, a, "Send sponsor outreach", "send_sponsor_outreach", () => outreachSponsors(u, String(a.event_id), Array.isArray(a.sponsor_ids) ? (a.sponsor_ids as string[]) : null, (a.run_id as string) ?? null)),
   },
   {
     name: "record_sponsor_reply",
@@ -199,7 +211,7 @@ const ALL_TOOLS: Tool[] = [
       const sp = await one<Sponsor>("SELECT * FROM sponsors WHERE id = $1 AND event_id = $2", [String(a.sponsor_id), String(a.event_id)]);
       if (!sp) throw new Error("Sponsor not found on this event");
       const r = await recordSponsor(sp.id, { status: a.status as Decision["status"], offer_type: (a.offer_type as Decision["offer_type"]) ?? null, offer_amount: a.offer_amount == null ? null : Number(a.offer_amount), offer_note: (a.offer_note as string) ?? null, notes: a.notes as string | undefined });
-      await audit(u, `sponsor.${r.status}`, { company: r.company, offer: r.status === "accepted" ? offerLabel(r) : null, via: "workbuddy" }, { eventId: r.event_id });
+      await audit(u, `sponsor.${r.status}`, { company: r.company, offer: r.status === "accepted" ? offerLabel(r) : null, via: "assistant" }, { eventId: r.event_id });
       return { sponsor_id: r.id, company: r.company, status: r.status, offer: r.status === "accepted" ? offerLabel(r) : null };
     },
   },
@@ -254,7 +266,7 @@ const ALL_TOOLS: Tool[] = [
       const M = await import("../meetings");
       const eventId = String(a.event_id);
       const [all, names] = await Promise.all([M.listMeetings(eventId), M.teamNames(eventId)]);
-      const now = M.demoNow();
+      const now = M.nowKL();
       const pick = all.filter((m) => (a.when === "upcoming" ? !M.isPast(m, now) : a.when === "past" ? M.isPast(m, now) : true));
       return pick.map((m) => ({
         meeting_id: m.id,
@@ -328,16 +340,19 @@ const ALL_TOOLS: Tool[] = [
   },
   {
     name: "whoami",
-    description: "Returns the Movents user this API key acts as, their role, and what they are allowed to do without approval.",
+    description: "Returns the Movents user you are acting as, their society, role, and what they may do without approval.",
     inputSchema: { type: "object", properties: {} },
-    run: async (_, user) => ({ id: user.id, name: user.name, role: user.role, department: user.department, note: "Outbound actions you are not allowed to do are queued for approval automatically." }),
+    run: async (_, user) => {
+      const soc = await one<{ name: string; university: string }>("SELECT s.name, u.name AS university FROM societies s JOIN universities u ON u.id = s.university_id WHERE s.id = $1", [user.society_id]);
+      return { id: user.id, name: user.name, email: user.email, society: soc?.name, university: soc?.university, role: user.role, department: user.department, note: "Outbound actions this user may not do alone are queued for approval automatically." };
+    },
   },
   {
     name: "start_run",
-    description: "Start a WorkBuddy agent run so every following tool call (with run_id) appears in the Movents live trace UI. Call this first with the user's original prompt.",
-    inputSchema: { type: "object", properties: { prompt: str("The user's original one-line request") }, required: ["prompt"] },
+    description: "Start a run so every following tool call (with run_id) appears in the Movents live trace the user can watch. Call this first with the user's original request.",
+    inputSchema: { type: "object", properties: { prompt: str("The user's original request") }, required: ["prompt"] },
     run: async (a, user) => {
-      const r = await Run.start(user, String(a.prompt), classify(String(a.prompt)), "workbuddy");
+      const r = await Run.start(user, String(a.prompt), classify(String(a.prompt)), "assistant");
       return { run_id: r.id, trace_url: `${appUrl()}/runs/${r.id}` };
     },
   },
@@ -350,7 +365,7 @@ const ALL_TOOLS: Tool[] = [
       const sup = Array.isArray(a.suppliers) ? (a.suppliers as string[]).filter(Boolean) : [];
       const prompt = `${String(a.prompt)}${team.length ? ` Team: ${team.join(", ")}.` : ""}${sup.length ? ` Suppliers: ${sup.join(", ")}.` : ""}`;
       const kind = classify(prompt);
-      const r = await Run.start(user, prompt, kind, "workbuddy");
+      const r = await Run.start(user, prompt, kind, "assistant");
       await execute(r, kind);
       const row = await one<AgentRun>("SELECT * FROM agent_runs WHERE id = $1", [r.id]);
       return { run_id: r.id, status: row?.status, event_id: row?.event_id, trace_url: `${appUrl()}/runs/${r.id}`, steps: row?.steps.map((s) => `${s.status.toUpperCase()} ${s.name}: ${s.summary ?? ""}`), outputs: row?.event_id ? outputs(row.event_id) : {} };
@@ -361,7 +376,7 @@ const ALL_TOOLS: Tool[] = [
     description: "Generate the post-event report (registered vs actual, budget vs actual, cost per attendee, NPS, feedback themes, lessons learned) as PDF and Word, and feed lessons back into the SOP knowledge base.",
     inputSchema: { type: "object", properties: { prompt: str('e.g. "Generate the post-event report for the AI talk."') }, required: ["prompt"] },
     run: async (a, user) => {
-      const r = await Run.start(user, String(a.prompt), "report", "workbuddy");
+      const r = await Run.start(user, String(a.prompt), "report", "assistant");
       await execute(r, "report");
       const row = await one<AgentRun>("SELECT * FROM agent_runs WHERE id = $1", [r.id]);
       return { run_id: r.id, status: row?.status, event_id: row?.event_id, trace_url: `${appUrl()}/runs/${r.id}`, steps: row?.steps.map((s) => `${s.status.toUpperCase()} ${s.name}: ${s.summary ?? ""}`), outputs: row?.event_id ? outputs(row.event_id) : {} };
@@ -390,15 +405,19 @@ const ALL_TOOLS: Tool[] = [
   { name: "check_lead_times", description: "Validate the event date against SOP lead times. Returns each check, and the earliest compliant date if any are missed.", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Validate lead times", "check_lead_times", () => T.checkLeads(String(a.event_id))) },
   {
     name: "save_speakers",
-    description: "Save speakers YOU found with your own web search (name, headline, profile URL, email if public). Replaces placeholder speakers.",
+    description: "Save speakers you found with your own web search (name, headline, profile URL, email if public). Replaces placeholder speakers. If you cannot search the web, skip this step and tell the user to add speakers on the Speakers page.",
     inputSchema: { type: "object", properties: { ...ev, speakers: { type: "array", items: { type: "object", properties: { name: str("Full name"), headline: str("Role / organisation"), source_url: str("Profile or source page"), email: str("Public email, if any"), fit_reason: str("Why they fit") }, required: ["name"] } }, ...runId }, required: ["event_id", "speakers"] },
     run: (a, u) => traced(u, a, "Save speakers from web search", "save_speakers", async () => { const r = await T.saveSpeakers(String(a.event_id), (a.speakers as never[]) ?? []); return { saved: r.length, speakers: r.map((s) => ({ id: s.id, name: s.name })) }; }),
   },
   {
     name: "save_supplier_quotes",
-    description: "Save supplier prices YOU found with your own web search. category: food | tshirt | lanyard | cardholder. unit_price in RM; unit: pax or piece. Always include the source url.",
+    description: "Save supplier prices you found with your own web search. category: food | tshirt | lanyard | cardholder. unit_price in RM; unit: pax or piece. Always include the source url. If you cannot search the web, skip this: Movents falls back to its supplier registry.",
     inputSchema: { type: "object", properties: { ...ev, quotes: { type: "array", items: { type: "object", properties: { category: str("food | tshirt | lanyard | cardholder"), name: str("Supplier"), url: str("Source page"), unit_price: { type: "number" }, unit: str("pax | piece"), snippet: str("Evidence text with the price") }, required: ["category", "name", "unit_price", "url"] } }, ...runId }, required: ["event_id", "quotes"] },
-    run: (a, u) => traced(u, a, "Save supplier quotes from web search", "save_supplier_quotes", async () => { const r = await T.saveSupplierQuotes(String(a.event_id), (a.quotes as never[]) ?? []); return { saved: r.length }; }),
+    run: (a, u) => traced(u, a, "Save supplier quotes from web search", "save_supplier_quotes", async () => {
+      const quotes = ((a.quotes as { url?: string }[]) ?? []).filter((q) => /^https?:\/\//i.test(String(q.url ?? "")));
+      const r = await T.saveSupplierQuotes(String(a.event_id), quotes as never[]);
+      return { saved: r.length };
+    }),
   },
   { name: "list_speakers_and_suppliers", description: "Speakers and supplier options currently on the event (after saving, call draft_budget to recompute).", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Research on file", "list_speakers_and_suppliers", async () => { const sp = await T.researchSpeakers(String(a.event_id), 3); const su = await T.researchSuppliers(String(a.event_id)); return { speakers: sp.speakers.map((s) => s.name), suppliers: Object.fromEntries(Object.entries(su.suppliers).map(([k, v]) => [k, v.map((x) => `${x.name} RM${x.unit_price}`)])) }; }) },
   { name: "draft_budget", description: "Compose the budget with 10% contingency and run the adapt loop (swap to cheaper vendors, apply cuts) until it fits the cap.", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Draft budget & adapt", "draft_budget", async () => { const s = await T.readSop(String(a.event_id)); const r = await T.draftBudget(String(a.event_id), s.signals); return { iterations: r.iterations.map((i) => ({ label: i.label, total: i.total, withinCap: i.withinCap, change: i.change })), final_total: r.final.total, shortfall: r.shortfall }; }) },
@@ -408,16 +427,16 @@ const ALL_TOOLS: Tool[] = [
   { name: "validate_proposal", description: "Check that the generated proposal contains every section the university SOP requires.", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Validate proposal", "validate_proposal", () => T.checkProposal(String(a.event_id))) },
   { name: "get_outputs", description: "Links to every generated file for an event (proposal PDF/DOCX, budget XLSX/CSV, risk register, run sheet, timeline ICS, report).", inputSchema: { type: "object", properties: { ...ev }, required: ["event_id"] }, run: async (a) => outputs(String(a.event_id)) },
   { name: "get_event", description: "Summary of an event: status, venue, budget totals, speakers, approvals and flags.", inputSchema: { type: "object", properties: { ...ev }, required: ["event_id"] }, run: async (a) => { const b = await loadBundle(String(a.event_id)); if (!b) throw new Error("Event not found"); const approvals = await query("SELECT id, title, status, approver_role FROM approval_requests WHERE event_id = $1 ORDER BY created_at", [b.event.id]); return { event: b.event, venue: b.venue?.name, budget: budgetTotals(b.lines, b.university?.sop.budget_rules.contingency_pct ?? 10), speakers: b.speakers.map((s) => ({ name: s.name, status: s.status })), approvals, rsvps: b.rsvps.length }; } },
-  { name: "send_speaker_outreach", description: "Send invitation emails to found speakers. Role-gated: committee members' emails are queued for Director approval.", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Send speaker outreach", "send_speaker_outreach (outlook)", () => T.outreachSpeakers(u, String(a.event_id), (a.run_id as string) ?? null)) },
+  { name: "send_speaker_outreach", description: "Send invitation emails to found speakers. Role-gated: committee members' emails are queued for Director approval.", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Send speaker outreach", "send_speaker_outreach", () => T.outreachSpeakers(u, String(a.event_id), (a.run_id as string) ?? null)) },
   { name: "request_vendor_quotes", description: "Email selected suppliers for written quotes. Role-gated (Logistics Director).", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Request supplier quotes", "request_vendor_quotes", () => T.requestVendorQuotes(u, String(a.event_id), (a.run_id as string) ?? null)) },
   { name: "request_budget_approval", description: "Route the budget total for approval (President/VP above the SOP threshold).", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Request budget approval", "request_budget_approval", () => T.requestBudgetApproval(u, String(a.event_id), (a.run_id as string) ?? null)) },
-  { name: "submit_to_faculty", description: "Email the proposal to the faculty advisor with approve/reject links. Role-gated: needs President/VP approval first.", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Submit to faculty", "submit_to_faculty (outlook)", () => T.submitToFaculty(u, String(a.event_id), (a.run_id as string) ?? null)) },
+  { name: "submit_to_faculty", description: "Email the proposal to the faculty advisor with approve/reject links. Role-gated: needs President/VP approval first.", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Submit to faculty", "submit_to_faculty", () => T.submitToFaculty(u, String(a.event_id), (a.run_id as string) ?? null)) },
   { name: "push_calendar", description: "Push the timeline milestones to Google Calendar (or the subscribable .ics feed).", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Push to calendar", "push_calendar", () => T.pushToCalendar(u, String(a.event_id), (a.run_id as string) ?? null)) },
   { name: "publish_event", description: "Create the public event page on Luma or Meetup. Role-gated (President/VP).", inputSchema: { type: "object", properties: { ...ev, platform: { type: "string", enum: ["luma", "meetup"] }, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Publish event page", `publish_event (${String(a.platform ?? "luma")})`, () => T.publishEvent(u, String(a.event_id), (a.run_id as string) ?? null, (a.platform as "luma" | "meetup") ?? "luma")) },
   { name: "sync_rsvps", description: "Pull RSVPs from Luma or Meetup into the registration list.", inputSchema: { type: "object", properties: { ...ev, platform: { type: "string", enum: ["luma", "meetup"] }, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Sync RSVPs", "sync_rsvps", () => T.syncRsvps(String(a.event_id), (a.platform as "luma" | "meetup") ?? "luma")) },
   {
     name: "generate_marketing_kit",
-    description: "Create the event's marketing kit: campus poster (4:5), Instagram post (1:1) and story (9:16), LinkedIn image, channel-specific captions and hashtags, plus a 15-second Reels/TikTok storyboard. Each creative includes an image_prompt. Then, for each image creative, generate a real AI image with your image generation tool (ImageGen, or miora_text_to_image) from that image_prompt and attach it with attach_creative_media. Never draw posters with code (Python/PIL, HTML, SVG, canvas or screenshots): they look empty and are rejected.",
+    description: "Create the event's marketing kit: campus poster (4:5), Instagram post (1:1) and story (9:16), LinkedIn image, channel-specific captions and hashtags, plus a 15-second Reels/TikTok storyboard. Each creative includes an image_prompt and a ready-made branded poster. If you have an image generation tool, generate an image from each image_prompt and attach it with attach_creative_media; otherwise the branded posters are used.",
     inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] },
     run: (a, u) =>
       traced(u, a, "Create marketing kit", "generate_marketing_kit", async () => {
@@ -427,42 +446,31 @@ const ALL_TOOLS: Tool[] = [
   },
   {
     name: "attach_creative_media",
-    description: "Attach a real AI-generated image (or video) to a creative. Generate it first with your image generation tool (ImageGen, or miora_text_to_image, whose resultFiles[].localPath you pass as file_path). Pass file_path, media_url (https), or media_base64 + mime_type. Images drawn with code (PIL, HTML, SVG, canvas) are rejected.",
-    inputSchema: { type: "object", properties: { creative_id: str("crv_..."), file_path: str("Absolute path of the generated image or video file on this computer"), media_url: str("https URL of the generated image/video"), media_base64: str("Base64 data, without the data: prefix"), mime_type: str("e.g. image/png, image/jpeg, video/mp4"), ...runId }, required: ["creative_id"] },
+    description: "Attach an image or video you generated to a creative. Pass media_url (a public https link) or media_base64 + mime_type. If the file only exists on the user's computer, pass file_path to get a one-time upload command instead. PNG, JPEG, WebP, GIF, MP4, WebM or MOV; images up to 8 MB, video up to 20 MB.",
+    inputSchema: { type: "object", properties: { creative_id: str("crv_..."), media_url: str("https URL of the generated image/video"), media_base64: { type: "string", description: "Base64 data, without the data: prefix", maxLength: 28_000_000 }, mime_type: str("e.g. image/png, image/jpeg, video/mp4"), file_path: str("Path of the file on the user's computer; returns an upload command"), ...runId }, required: ["creative_id"] },
     run: (a, u) =>
-      traced(u, a, "Attach Nano Banana media", "attach_creative_media", async () => {
-        let media = a.media_url ? String(a.media_url) : a.media_base64 ? `data:${String(a.mime_type ?? "image/png")};base64,${String(a.media_base64)}` : "";
-        if (!media && a.file_path) {
-          const fs = await import("node:fs/promises");
-          const path = String(a.file_path);
-          const ext = path.split(".").pop()?.toLowerCase() ?? "png";
-          const mime = ({ png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime" } as Record<string, string>)[ext] ?? "image/png";
-          const file = await fs.readFile(path).catch(() => null);
-          // Movents runs on another machine (e.g. Vercel): the file is on WorkBuddy's computer, so upload it.
-          if (!file) {
-            await assertMemberOf(u, "creatives", String(a.creative_id));
-            const link = `${appUrl()}/api/creatives/${String(a.creative_id)}/upload?t=${signToken(`upload:${String(a.creative_id)}`)}`;
-            return { attached: false, upload_needed: true, run_this_command: `curl -X POST -H "Content-Type: ${mime}" --data-binary "@${path}" "${link}"`, note: "Movents runs on another machine, so run this shell command on your computer to upload the file. The link works only for this creative." };
-          }
-          media = `data:${mime};base64,${file.toString("base64")}`;
+      traced(u, a, "Attach generated media", "attach_creative_media", async () => {
+        const cid = String(a.creative_id);
+        if (!a.media_url && !a.media_base64) {
+          if (!a.file_path) throw new Error("Pass media_url, media_base64 or file_path");
+          const link = `${appUrl()}/api/creatives/${cid}/upload?t=${signToken(`upload:${cid}`, 1)}`;
+          return {
+            attached: false,
+            upload_needed: true,
+            upload_url: link,
+            command: `curl -X POST --data-binary "@${String(a.file_path).replace(/"/g, "")}" "${link}"`,
+            note: "POST the raw file bytes to upload_url (valid 24 hours, this creative only). If you can run shell commands, run `command`; otherwise ask the user to upload the file on the event's Marketing page.",
+          };
         }
-        if (/^https:\/\//.test(media) && !/\.(mp4|webm|mov)(\?|$)/i.test(media)) {
-          // Store the bytes: generator links (e.g. signed URLs) expire.
-          const res = await fetch(media);
-          if (res.ok) media = `data:${(res.headers.get("content-type") ?? "image/png").split(";")[0]};base64,${Buffer.from(await res.arrayBuffer()).toString("base64")}`;
-        }
-        if (!media) throw new Error("file_path, media_url or media_base64 is required");
-        // Code-drawn posters (flat shapes + text) compress to a few dozen KB; real AI art does not.
-        const b64 = media.match(/^data:image\/[\w+.-]+;base64,(.*)$/)?.[1];
-        if (b64 && b64.length * 0.75 < 60_000) throw new Error("This image looks drawn with code, not AI-generated (too small and flat). Generate it with your image generation tool (ImageGen or miora_text_to_image) from the creative's image_prompt, then attach that file.");
-        const c = await setImage(String(a.creative_id), media, "workbuddy");
+        const media = a.media_url ? String(a.media_url) : `data:${String(a.mime_type ?? "image/png")};base64,${String(a.media_base64)}`;
+        const c = await setImage(cid, media, "assistant");
         return { creative_id: c?.id, attached: true, preview: c ? `${appUrl()}${imageHref(c)}` : null };
       }),
   },
   {
     name: "update_creative_copy",
-    description: "Replace a creative's caption and/or hashtags (e.g. after WorkBuddy rewrites them in the society's voice).",
-    inputSchema: { type: "object", properties: { creative_id: str("crv_..."), caption: str("New caption"), hashtags: str("New hashtags") }, required: ["creative_id"] },
+    description: "Replace a creative's caption and/or hashtags (e.g. after rewriting them in the society's voice).",
+    inputSchema: { type: "object", properties: { creative_id: str("crv_..."), caption: { type: "string", description: "New caption", maxLength: 5000 }, hashtags: { type: "string", description: "New hashtags", maxLength: 1000 } }, required: ["creative_id"] },
     run: async (a) => {
       const c = await updateRow<Creative>("creatives", String(a.creative_id), { caption: a.caption as string | undefined, hashtags: a.hashtags as string | undefined, updated_at: new Date() });
       if (!c) throw new Error("Creative not found");
@@ -470,30 +478,51 @@ const ALL_TOOLS: Tool[] = [
     },
   },
   { name: "request_social_approval", description: "Send the poster and social posts for approval (President/VP). Approved creatives satisfy the SOP publicity-approval step.", inputSchema: { type: "object", properties: { ...ev, ...runId }, required: ["event_id"] }, run: (a, u) => traced(u, a, "Request poster & social approval", "request_social_approval", () => T.requestSocialApproval(u, String(a.event_id), (a.run_id as string) ?? null)) },
-  { name: "list_creatives", description: "List the event's marketing creatives with status, preview links, image_prompt and size. needs_image = still a placeholder or a code-drawn image: generate a real AI image with ImageGen (or miora_text_to_image) from image_prompt, then attach_creative_media.", inputSchema: { type: "object", properties: { ...ev }, required: ["event_id"] }, run: async (a) => (await refreshPrompts(String(a.event_id))).map((c) => ({ creative_id: c.id, kind: c.kind, status: c.status, image_source: c.image_source, needs_image: needsImage(c), image_prompt: c.image_prompt, width: c.width, height: c.height, preview: `${appUrl()}${imageHref(c)}` })) },
-  { name: "list_approvals", description: "List approval requests (default: pending).", inputSchema: { type: "object", properties: { status: str("pending | approved | executed | rejected | awaiting_faculty | all") } }, run: async (a) => query(`SELECT id, event_id, action_type, title, approver_role, approver_department, status, result, created_at FROM approval_requests ${a.status === "all" ? "" : "WHERE status = $1"} ORDER BY created_at DESC LIMIT 100`, a.status === "all" ? [] : [String(a.status ?? "pending")]) },
-  { name: "decide_approval", description: "Approve or reject a pending request. Only works if the API key's user has the authority (role check enforced).", inputSchema: { type: "object", properties: { approval_id: str("apr_..."), decision: { type: "string", enum: ["approve", "reject"] }, note: str("Optional note") }, required: ["approval_id", "decision"] }, run: (a, u) => decideApproval(u, String(a.approval_id), a.decision as "approve" | "reject", a.note as string | undefined) },
-  { name: "run_scheduler", description: "Run the daily automations now: speaker follow-ups, vendor reminders (7 days before), attendee reminder cadence, 90% spend alerts, feedback surveys.", inputSchema: { type: "object", properties: {} }, run: () => runScheduler() },
+  { name: "list_creatives", description: "List the event's marketing creatives with status, preview links, image_prompt and size. needs_image = still the branded placeholder; if you can generate images, make one from image_prompt and attach_creative_media.", inputSchema: { type: "object", properties: { ...ev }, required: ["event_id"] }, run: async (a) => (await refreshPrompts(String(a.event_id))).map((c) => ({ creative_id: c.id, kind: c.kind, status: c.status, image_source: c.image_source, needs_image: needsImage(c), image_prompt: c.image_prompt, width: c.width, height: c.height, preview: `${appUrl()}${imageHref(c)}` })) },
+  {
+    name: "list_approvals",
+    description: "Approval requests in the user's society (default: pending), with who must approve each.",
+    inputSchema: { type: "object", properties: { status: { type: "string", enum: ["pending", "approved", "executed", "rejected", "failed", "awaiting_faculty", "all"] } } },
+    run: async (a, u) =>
+      query(
+        `SELECT a.id, a.event_id, a.action_type, a.title, a.approver_role, a.approver_department, a.status, a.created_at FROM approval_requests a
+         LEFT JOIN events e ON e.id = a.event_id
+         WHERE a.society_id = $1 AND ($2 = 'all' OR a.status = $2)
+           AND ($3 OR a.requested_by = $4 OR (e.id IS NOT NULL AND ${visibleSql(u, 4)}))
+         ORDER BY a.created_at DESC LIMIT 100`,
+        [u.society_id, String(a.status ?? "pending"), u.role !== "committee", u.id],
+      ),
+  },
+  { name: "decide_approval", description: "Approve or reject a pending request. Only works if the user has the authority (role check enforced). Always confirm with the user before approving.", inputSchema: { type: "object", properties: { approval_id: str("apr_..."), decision: { type: "string", enum: ["approve", "reject"] }, note: str("Optional note") }, required: ["approval_id", "decision"] }, run: (a, u) => decideApproval(u, String(a.approval_id), a.decision as "approve" | "reject", a.note as string | undefined) },
+  {
+    name: "run_scheduler",
+    description: "Run the society's daily automations now (President/VP): speaker follow-ups, vendor reminders, attendee reminders, 90% spend alerts, feedback surveys. They also run automatically every morning.",
+    inputSchema: { type: "object", properties: {} },
+    run: async (_, u) => {
+      if (!isFinal(u)) throw new Error("Only the President/VP can run the automations manually");
+      return runScheduler({ societyId: u.society_id! });
+    },
+  },
   {
     name: "log_step",
-    description: "Record a step WorkBuddy performed outside Movents (e.g. wrote the slide deck, drafted a poster) so it appears in the live trace.",
-    inputSchema: { type: "object", properties: { run_id: str("Run id"), name: str("Step name"), tool: str("Tool used"), status: { type: "string", enum: ["ok", "warn", "fail", "blocked"] }, summary: str("What happened / result"), output_url: str("Optional link to a produced file") }, required: ["run_id", "name", "summary"] },
+    description: "Record a step you performed outside Movents (e.g. wrote the slide deck, generated a poster) so it appears in the live trace.",
+    inputSchema: { type: "object", properties: { run_id: str("Run id"), name: { type: "string", description: "Step name", maxLength: 200 }, tool: { type: "string", description: "Tool used", maxLength: 100 }, status: { type: "string", enum: ["ok", "warn", "fail", "blocked"] }, summary: { type: "string", description: "What happened / result", maxLength: 2000 }, output_url: str("Optional https link to a produced file") }, required: ["run_id", "name", "summary"] },
     run: async (a, user) => {
       const r = await Run.load(String(a.run_id), user);
       if (!r) throw new Error("Run not found");
-      const s = await r.record({ name: String(a.name), tool: `workbuddy → ${String(a.tool ?? "workbuddy")}`, status: (a.status as StepStatus) ?? "ok", summary: String(a.summary) });
-      if (a.output_url) await r.output(String(a.name), String(a.output_url), "external");
+      const s = await r.record({ name: String(a.name), tool: `assistant → ${String(a.tool ?? "assistant")}`, status: (a.status as StepStatus) ?? "ok", summary: String(a.summary) });
+      if (a.output_url && /^https:\/\//i.test(String(a.output_url))) await r.output(String(a.name), String(a.output_url), "external");
       return { recorded: s.id };
     },
   },
   {
     name: "finish_run",
-    description: "Mark a WorkBuddy run as finished and attach the event's output links to it.",
+    description: "Mark a run as finished and attach the event's output links to it.",
     inputSchema: { type: "object", properties: { run_id: str("Run id"), summary: str("One-paragraph run summary") }, required: ["run_id"] },
     run: async (a, user) => {
       const r = await Run.load(String(a.run_id), user);
       if (!r) throw new Error("Run not found");
-      if (r.eventId) for (const [k, v] of Object.entries(outputs(r.eventId))) await r.output(k.replace(/_/g, " ").replace(/^[a-z]/, (c) => c.toUpperCase()).replace(/ (pdf|docx|xlsx|csv|ics)$/, " (.$1)"), v.replace(appUrl(), ""), k.split("_").pop() ?? "page");
+      if (r.eventId) for (const [k, v] of Object.entries(outputs(r.eventId))) await r.output(k.replace(/_/g, " ").replace(/^[a-z]/, (c) => c.toUpperCase()).replace(/ (pdf|docx|xlsx|csv|ics)$/, " (.$1)"), v.replace(appUrl(), "").replace(/\?t=.*$/, ""), k.split("_").pop() ?? "page");
       await r.finish({ summary: a.summary ?? "", event_id: r.eventId });
       return { done: true, trace_url: `${appUrl()}/runs/${r.id}` };
     },
@@ -501,20 +530,48 @@ const ALL_TOOLS: Tool[] = [
 ];
 
 /**
- * What WorkBuddy sees. The one-shot pipeline stays out: WorkBuddy plans the
- * event itself, calling each tool in turn, so it is the engine and Movents is
- * the toolset and the record.
+ * What AI assistants see. The one-shot pipeline stays out: the assistant plans
+ * the event itself, calling each tool in turn, so it is the engine and Movents
+ * is the toolset and the record.
  */
 export const TOOLS = ALL_TOOLS.filter((t) => t.name !== "plan_event_end_to_end");
 
-/** Every event-scoped tool checks the caller is on that event's team. */
+const READ_ONLY = new Set([
+  "review_brief", "list_society_members", "list_my_events", "list_event_emails", "list_sponsors", "list_meetings", "whoami", "read_sop",
+  "check_lead_times", "list_speakers_and_suppliers", "validate_budget", "validate_proposal", "get_outputs", "get_event", "list_creatives", "list_approvals",
+]);
+/** Tools that reach people or services outside Movents (email, Luma/Meetup, calendars). */
+const OPEN_WORLD = new Set([
+  "send_sponsor_outreach", "send_speaker_outreach", "request_vendor_quotes", "submit_to_faculty", "push_calendar", "publish_event", "sync_rsvps",
+  "decide_approval", "run_scheduler", "attach_creative_media", "request_budget_approval", "request_social_approval",
+]);
+const DESTRUCTIVE = new Set(["event_team", "draft_budget", "plan_timeline", "generate_risks", "generate_ops_pack", "generate_marketing_kit", "decide_approval"]);
+
+export function annotationsFor(name: string): ToolAnnotations {
+  const title = name.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+  const ro = READ_ONLY.has(name);
+  return { title, readOnlyHint: ro, destructiveHint: !ro && DESTRUCTIVE.has(name), idempotentHint: ro, openWorldHint: OPEN_WORLD.has(name) };
+}
+
+/**
+ * The callable version of a tool: arguments are validated against its
+ * schema, then every id the caller passes is checked against what they may
+ * touch (event team membership, which also scopes to their society).
+ */
 export function findTool(name: string): Tool | undefined {
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) return undefined;
   return {
     ...tool,
-    run: async (a: Args, u: User) => {
+    run: async (raw: Args, u: User) => {
+      if (!u.society_id) throw new Error("Join or create a society in Movents first");
+      const a = validateArgs(tool.inputSchema as Parameters<typeof validateArgs>[0], raw);
       if (a.event_id) await assertMember(u, String(a.event_id));
+      if (a.creative_id) await assertMemberOf(u, "creatives", String(a.creative_id));
+      if (a.sponsor_id) await assertMemberOf(u, "sponsors", String(a.sponsor_id));
+      if (a.meeting_id) await assertMemberOf(u, "meetings", String(a.meeting_id));
+      if (Array.isArray(a.sponsor_ids)) for (const sid of a.sponsor_ids) await assertMemberOf(u, "sponsors", String(sid));
+      if (a.run_id && !(await Run.load(String(a.run_id), u))) throw new Error("Run not found");
       return tool.run(a, u);
     },
   };

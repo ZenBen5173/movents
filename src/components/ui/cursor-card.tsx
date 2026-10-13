@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { motion, useMotionValue, useSpring, AnimatePresence } from "framer-motion";
+import { motion, useMotionValue, useSpring, AnimatePresence } from "motion/react";
 import { Slot } from "radix-ui";
 import { cn } from "@/lib/utils";
 
@@ -98,7 +98,7 @@ export function CursorCard({
               {preview ?? (
                 <>
                   {image && (
-                    // eslint-disable-next-line @next/next/no-img-element
+                     
                     <img src={image} alt="" className="w-full h-auto rounded-md mb-3 object-cover" />
                   )}
                   {description && (

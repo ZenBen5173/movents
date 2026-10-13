@@ -1,4 +1,4 @@
-import { currentUser } from "@/lib/session";
+import { pageUser } from "@/lib/guard";
 import { query } from "@/lib/db";
 import { daysBetween, today } from "@/lib/appurl";
 import { Dashboard, type DashProject, type DashTask } from "@/components/app/dashboard";
@@ -7,9 +7,10 @@ import { visibleSql } from "@/lib/members";
 export const dynamic = "force-dynamic";
 
 export default async function BoxOffice() {
-  const user = (await currentUser())!;
+  const user = await pageUser();
   const now = today();
-  const projects = await query<{
+  const [projects, tasks] = await Promise.all([
+    query<{
     id: string;
     title: string;
     date: string;
@@ -36,14 +37,16 @@ export default async function BoxOffice() {
       (SELECT count(*)::int FROM rsvps r WHERE r.event_id = e.id AND r.status = 'going') AS going
      FROM events e LEFT JOIN venues v ON v.id = e.venue_id WHERE e.society_id = $1 AND ${visibleSql(user, 2)} ORDER BY e.date`,
     [user.society_id, user.id],
-  );
-  const tasks = await query<{ id: string; title: string; due_date: string; status: string; priority: string; event_id: string; event_title: string; owner_id: string | null; owner: string | null; depends_on: string[] }>(
-    `SELECT t.id, t.title, t.due_date, t.status, t.priority, t.event_id, e.title AS event_title, t.owner_id, u.name AS owner, t.depends_on
-     FROM tasks t JOIN events e ON e.id = t.event_id LEFT JOIN users u ON u.id = t.owner_id
-     WHERE e.society_id = $1 AND ${visibleSql(user, 2)} AND t.status <> 'done' AND e.status <> 'completed' ORDER BY t.due_date LIMIT 400`,
-    [user.society_id, user.id],
-  );
-  const doneIds = new Set((await query<{ id: string }>("SELECT t.id FROM tasks t JOIN events e ON e.id = t.event_id WHERE e.society_id = $1 AND t.status = 'done'", [user.society_id])).map((r) => r.id));
+    ),
+    // blocked = depends on a task that is not done yet
+    query<{ id: string; title: string; due_date: string; status: string; priority: string; event_id: string; event_title: string; owner_id: string | null; owner: string | null; depends_on: string[]; blocked: boolean }>(
+      `SELECT t.id, t.title, t.due_date, t.status, t.priority, t.event_id, e.title AS event_title, t.owner_id, u.name AS owner, t.depends_on,
+         EXISTS (SELECT 1 FROM jsonb_array_elements_text(t.depends_on) d(x) WHERE NOT EXISTS (SELECT 1 FROM tasks dt WHERE dt.id = d.x AND dt.status = 'done')) AS blocked
+       FROM tasks t JOIN events e ON e.id = t.event_id LEFT JOIN users u ON u.id = t.owner_id
+       WHERE e.society_id = $1 AND ${visibleSql(user, 2)} AND t.status <> 'done' AND e.status <> 'completed' ORDER BY t.due_date LIMIT 400`,
+      [user.society_id, user.id],
+    ),
+  ]);
   const dash: DashProject[] = projects.map((p) => {
     const base = p.approved_budget ?? p.budget_cap;
     const spent = p.actual > 0 ? p.actual : 0;
@@ -75,7 +78,7 @@ export default async function BoxOffice() {
     mine: t.owner_id === user.id,
     owner: t.owner,
     priority: t.priority,
-    blocked: (t.depends_on ?? []).some((d) => !doneIds.has(d)),
+    blocked: t.blocked,
   }));
   return <Dashboard projects={dash} tasks={dashTasks} today={now} firstName={user.name.split(" ")[0]} />;
 }

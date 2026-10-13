@@ -1,5 +1,6 @@
 "use server";
 
+import { publicError } from "@/lib/errors";
 import { revalidatePath } from "next/cache";
 import { one } from "@/lib/db";
 import { requireUser } from "@/lib/session";
@@ -11,7 +12,7 @@ import type { Sponsor } from "@/lib/types";
 type Res = { ok: true; message?: string } | { ok: false; error: string };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const fail = (err: unknown): Res => ({ ok: false, error: err instanceof Error ? err.message : String(err) });
+const fail = (err: unknown): Res => ({ ok: false, error: publicError(err) });
 const refresh = (eventId: string) => {
   revalidatePath(`/events/${eventId}/sponsors`);
   revalidatePath(`/events/${eventId}/inbox`);

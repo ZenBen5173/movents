@@ -110,17 +110,17 @@ async function planPipeline(run: Run) {
   });
 
   // 2 — RESEARCH
-  await run.step("Find speakers", "workbuddy.web_search", { topic: ev.topic, count: 3 }, async () => {
+  await run.step("Find speakers", "assistant.web_search", { topic: ev.topic, count: 3 }, async () => {
     const r = await T.researchSpeakers(ev.id, 3);
     return {
       output: r.speakers.map((s) => ({ name: s.name, headline: s.headline, url: s.source_url, email: s.email ?? "via contact page" })),
-      summary: `${r.speakers.length} speakers${r.mode === "workbuddy" ? " from WorkBuddy" : " (placeholders until WorkBuddy saves real ones)"}: ${r.speakers.map((s) => s.name).join(", ")}`,
-      status: r.mode === "workbuddy" ? "ok" : "warn",
+      summary: `${r.speakers.length} speakers${r.mode === "assistant" ? " from your AI assistant" : " (placeholders until your AI assistant or a teammate adds real ones)"}: ${r.speakers.map((s) => s.name).join(", ")}`,
+      status: r.mode === "assistant" ? "ok" : "warn",
     };
   });
   await run.output("Speakers", `/events/${ev.id}/speakers`, "page");
 
-  await run.step("Research suppliers (cheapest first)", "workbuddy.web_search + reference prices", { categories: ["food", "tshirt", "lanyard", "cardholder"] }, async () => {
+  await run.step("Research suppliers (cheapest first)", "assistant.web_search + reference prices", { categories: ["food", "tshirt", "lanyard", "cardholder"] }, async () => {
     const r = await T.researchSuppliers(ev.id);
     const flat = Object.entries(r.suppliers).map(([cat, list]) => ({ category: cat, cheapest: list[0] ? `${list[0].name}, ${fmtRM(list[0].unit_price)}/${list[0].unit}` : "none", options: list.length, mode: r.modes[cat] }));
     return { output: flat, summary: flat.map((f) => `${f.category}: ${f.cheapest}`).join(" · ") };
@@ -160,8 +160,8 @@ async function planPipeline(run: Run) {
   await run.step("Create marketing kit", nanoBananaEnabled() ? "nano-banana (gemini image) + copywriter" : "poster templates + copywriter", { channels: ["poster", "instagram", "linkedin", "reels"] }, async () => {
     const r = await generateKit(ev.id, { withImages: true });
     return {
-      output: r.creatives.map((c) => ({ kind: c.kind, channel: c.channel, image: c.kind === "video" ? "storyboard, generate in WorkBuddy" : imageHref(c) })),
-      summary: `Poster, Instagram post + story, LinkedIn image, captions & hashtags, 15s video storyboard${r.generated ? `, ${r.generated} images by Nano Banana` : ", branded templates (WorkBuddy can replace them with Nano Banana images)"}`,
+      output: r.creatives.map((c) => ({ kind: c.kind, channel: c.channel, image: c.kind === "video" ? "storyboard, generate with your AI assistant" : imageHref(c) })),
+      summary: `Poster, Instagram post + story, LinkedIn image, captions & hashtags, 15s video storyboard${r.generated ? `, ${r.generated} images by Nano Banana` : ", branded templates (your AI assistant can replace them with generated images)"}`,
       status: r.errors.length ? "warn" : "ok",
     };
   });
@@ -237,16 +237,17 @@ async function reportPipeline(run: Run) {
   const eventId = ev.output!.id;
   await run.setEvent(eventId);
 
-  await run.step("Sync RSVPs & check-ins", `luma.get_guests (${lumaMode()}) + meetup`, { event_id: eventId }, async () => {
-    const notes = await T.simulateEventDay(eventId);
+  await run.step("Registrations & check-ins", "db.rsvps", { event_id: eventId }, async () => {
     const b = await loadBundle(eventId);
     const reg = b!.rsvps.filter((r) => r.status !== "cancelled").length;
     const att = b!.rsvps.filter((r) => r.checked_in).length;
+    const lines = b!.lines.filter((l) => l.actual != null).length;
+    const missing = [!att && "no check-ins recorded", !lines && "no actual spend entered", !b!.feedback.length && "no survey responses yet"].filter(Boolean) as string[];
     return {
-      output: { registered: reg, attended: att, notes },
-      summary: `${reg} registered, ${att} checked in${notes.length ? " (includes simulated demo data)" : ""}`,
-      status: notes.length ? "warn" : "ok",
-      adapt: notes.length ? notes.join(" ") : undefined,
+      output: { registered: reg, attended: att },
+      summary: `${reg} registered, ${att} checked in`,
+      status: missing.length ? "warn" : "ok",
+      adapt: missing.length ? `The report will be incomplete: ${missing.join(", ")}.` : undefined,
     };
   });
 

@@ -1,5 +1,6 @@
 import "server-only";
 import { id, insert, one, update } from "../db";
+import { isMember } from "../members";
 import type { AgentOutput, AgentRun, AgentStep, StepStatus, User } from "../types";
 
 export type StepResult = {
@@ -24,9 +25,11 @@ export class Run {
     return new Run(runId, user, prompt);
   }
 
+  /** A run the user started, or one on an event they are on. Others read as missing. */
   static async load(runId: string, user: User) {
     const row = await one<AgentRun>("SELECT * FROM agent_runs WHERE id = $1", [runId]);
     if (!row) return null;
+    if (row.started_by !== user.id && !(row.event_id && (await isMember(user, row.event_id)))) return null;
     const r = new Run(row.id, user, row.prompt);
     r.steps = row.steps ?? [];
     r.outputs = row.outputs ?? [];
@@ -48,7 +51,8 @@ export class Run {
     const s: AgentStep = { id: `s${this.steps.length + 1}`, name, tool, status: "running", input, started_at: new Date().toISOString() };
     this.steps.push(s);
     await this.save();
-    const pause = Number(process.env.AGENT_STEP_DELAY_MS ?? 350);
+    // Optional pause so a live trace is easy to follow in a walkthrough. Off by default.
+    const pause = Number(process.env.AGENT_STEP_DELAY_MS ?? 0);
     if (pause) await new Promise((r) => setTimeout(r, pause));
     try {
       const res = await fn();
@@ -69,7 +73,7 @@ export class Run {
     }
   }
 
-  /** Record a step that something outside (WorkBuddy) already performed. */
+  /** Record a step the AI assistant already performed outside Movents. */
   async record(step: Omit<AgentStep, "id" | "started_at"> & { started_at?: string }) {
     this.steps.push({ id: `s${this.steps.length + 1}`, started_at: new Date().toISOString(), finished_at: new Date().toISOString(), ...step });
     await this.save();

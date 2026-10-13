@@ -64,8 +64,8 @@ export async function getMeeting(meetingId: string) {
   return r ? toMeeting(r) : null;
 }
 
-/** "Now" for countdowns and upcoming/past: the demo day (DEMO_TODAY) at the current Malaysia clock time. */
-export function demoNow() {
+/** "Now" for countdowns and upcoming/past, on the Malaysia clock. */
+export function nowKL() {
   const clock = klParts(new Date().toISOString()).time;
   return Date.parse(toStartsAt(today(), clock));
 }

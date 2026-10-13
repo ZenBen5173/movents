@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { loadBundle, budgetTotals } from "@/lib/docs/builders";
 import { query } from "@/lib/db";
-import { daysBetween, fmtDate, fmtRM, today } from "@/lib/appurl";
+import { daysBetween, fmtDate, today } from "@/lib/appurl";
 import { blockedBy, criticalPath } from "@/lib/planning";
 import { Card } from "@/components/app/ui";
 import { OverviewStats } from "@/components/app/overview-stats";
@@ -13,6 +13,7 @@ import { OverviewHero } from "@/components/app/overview-hero";
 import { CriticalPathTimeline } from "@/components/app/task-manager";
 import { UpNext } from "@/components/app/up-next";
 import { cn } from "@/lib/utils";
+import { canViewEvent } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ const ACTION_ICON: Record<string, IconName> = {
 
 export default async function ProjectOverview({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await canViewEvent(id))) return null;
   const b = (await loadBundle(id))!;
   const sop = b.university!.sop;
   const t = budgetTotals(b.lines, sop.budget_rules.contingency_pct);

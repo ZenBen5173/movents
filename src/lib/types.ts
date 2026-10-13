@@ -16,7 +16,8 @@ export type User = {
   role: Role;
   department: string | null;
   phone: string | null;
-  api_key: string | null;
+  email_verified_at?: string | null;
+  avatar_url?: string | null;
 };
 
 export type LeadTime = {
@@ -48,6 +49,8 @@ export type University = {
   id: string;
   name: string;
   short_name: string;
+  latitude?: number | null;
+  longitude?: number | null;
   sop: Sop;
   created_at: string;
 };
@@ -240,7 +243,7 @@ export type AgentRun = {
   event_id: string | null;
   prompt: string;
   kind: "plan" | "report" | "custom";
-  source: "builtin" | "workbuddy";
+  source: "builtin" | "assistant" | "workbuddy";
   status: "running" | "done" | "failed";
   steps: AgentStep[];
   outputs: AgentOutput[];
@@ -305,7 +308,7 @@ export type Creative = {
   image_prompt: string | null;
   image_data: string | null;
   image_url: string | null;
-  image_source: "template" | "nano-banana" | "workbuddy" | "upload";
+  image_source: "template" | "nano-banana" | "assistant" | "workbuddy" | "upload";
   width: number;
   height: number;
   status: "draft" | "pending_approval" | "approved" | "posted";

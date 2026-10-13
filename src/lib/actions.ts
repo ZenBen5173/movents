@@ -1,8 +1,9 @@
 import "server-only";
+import { esc } from "./html";
 import { audit, notify } from "./audit";
 import { id, insert, one, query, update } from "./db";
 import { ACTION_LABEL, canDecide, decide } from "./rbac";
-import { appUrl, fmtDate, fmtRM, signToken } from "./appurl";
+import { appUrl, fmtDate, fmtRM, outputsUrl, signToken } from "./appurl";
 import { emailShell, sendEmail } from "./integrations/email";
 import { buildIcs, calendarMode, createGoogleEvent } from "./integrations/gcal";
 import { lumaCreateEvent, meetupCreateEvent } from "./integrations/ticketing";
@@ -44,6 +45,7 @@ export async function gate(
   const approval = await insert<ApprovalRequest>("approval_requests", {
     id: id("apr"),
     event_id: opts.eventId ?? null,
+    society_id: user.society_id,
     action_type: action,
     title,
     payload,
@@ -60,7 +62,7 @@ export async function gate(
     await update("vendors", String(payload.vendor_id), { deposit_status: "pending_approval" });
   }
   await notify(
-    { role: d.approver_role },
+    { role: d.approver_role, societyId: user.society_id! },
     `Approval needed: ${ACTION_LABEL[action]}`,
     `${user.name} requested: ${title}${d.approver_department ? ` (${d.approver_department})` : ""}`,
     `/approvals#${approval.id}`,
@@ -78,15 +80,16 @@ export async function gate(
 async function notifyApproverByEmail(role: string, dept: string | null, approval: ApprovalRequest, requester: User) {
   if (process.env.NOTIFY_APPROVERS_BY_EMAIL !== "1") return;
   const approvers = await query<User>(
-    `SELECT * FROM users WHERE role = $1 ${dept ? "AND department = $2" : ""}`,
-    dept ? [role, dept] : [role],
+    `SELECT u.* FROM memberships m JOIN users u ON u.id = m.user_id
+     WHERE m.society_id = $1 AND m.role = $2 ${dept ? "AND m.department = $3" : ""}`,
+    dept ? [requester.society_id, role, dept] : [requester.society_id, role],
   );
   for (const a of approvers) {
     await sendEmail({
       to: a.email,
       kind: "approval_ping",
       subject: `[Movents] Approval needed: ${approval.title}`,
-      html: emailShell("Approval needed", `<p>${requester.name} needs your approval for <b>${approval.title}</b>.</p><p><a href="${appUrl()}/approvals">Open approval queue</a></p>`),
+      html: emailShell("Approval needed", `<p>${esc(requester.name)} needs your approval for <b>${esc(approval.title)}</b>.</p><p><a href="${appUrl()}/approvals">Open approval queue</a></p>`),
       eventId: approval.event_id,
       relatedId: approval.id,
       sentBy: "system",
@@ -113,14 +116,20 @@ function summarise(p: Payload) {
 }
 
 export async function decideApproval(user: User, approvalId: string, decision: "approve" | "reject", note?: string) {
-  const req = await one<ApprovalRequest>("SELECT * FROM approval_requests WHERE id = $1", [approvalId]);
+  const req = await one<ApprovalRequest>("SELECT * FROM approval_requests WHERE id = $1 AND society_id = $2", [approvalId, user.society_id]);
   if (!req) throw new Error("Approval request not found");
   if (req.status !== "pending") throw new Error(`Request is already ${req.status}`);
   if (!canDecide(user, req)) throw new Error(`Only a ${req.approver_role}${req.approver_department ? ` (${req.approver_department})` : ""} can decide this`);
   const requester = req.requested_by ? await one<User>("SELECT * FROM users WHERE id = $1", [req.requested_by]) : null;
 
+  // Claim the request atomically: two approvers (or a double click) can't both run it.
+  const claimed = await one(
+    "UPDATE approval_requests SET status = $2, decided_by = $3, decided_at = now(), decision_note = $4 WHERE id = $1 AND status = 'pending' RETURNING id",
+    [req.id, decision === "reject" ? "rejected" : "approved", user.id, note ?? null],
+  );
+  if (!claimed) throw new Error("This request was just decided by someone else");
+
   if (decision === "reject") {
-    await update("approval_requests", req.id, { status: "rejected", decided_by: user.id, decided_at: new Date(), decision_note: note ?? null });
     if (req.action_type === "email.speaker" && req.payload.speaker_id) await update("speakers", String(req.payload.speaker_id), { status: "found" });
     if (req.action_type === "payment.deposit" && req.payload.vendor_id) await update("vendors", String(req.payload.vendor_id), { deposit_status: "none" });
     if (req.action_type === "publish.social") for (const cid of (req.payload.creative_ids as string[]) ?? []) await update("creatives", cid, { status: "draft" });
@@ -129,7 +138,6 @@ export async function decideApproval(user: User, approvalId: string, decision: "
     return { status: "rejected" as const };
   }
 
-  await update("approval_requests", req.id, { status: "approved", decided_by: user.id, decided_at: new Date(), decision_note: note ?? null });
   await audit(user, "approval.approved", { action: req.action_type, title: req.title, approval_id: req.id, requested_by: requester?.name }, { eventId: req.event_id, approvedBy: user.name });
   try {
     const result = await execute(req.action_type, req.payload, requester ?? user, user, req);
@@ -151,13 +159,17 @@ export async function facultyDecision(approvalId: string, decision: "approve" | 
   const req = await one<ApprovalRequest>("SELECT * FROM approval_requests WHERE id = $1", [approvalId]);
   if (!req || req.action_type !== "email.faculty") throw new Error("Not a faculty submission");
   if (req.status !== "awaiting_faculty") throw new Error(`Submission is ${req.status}`);
-  const faculty = await one<User>("SELECT * FROM users WHERE role = 'faculty_advisor' LIMIT 1");
+  const society = req.event_id ? (await one<{ society_id: string }>("SELECT society_id FROM events WHERE id = $1", [req.event_id]))?.society_id ?? null : null;
+  const faculty = society
+    ? await one<User>("SELECT u.* FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.society_id = $1 AND m.role = 'faculty_advisor' LIMIT 1", [society])
+    : null;
   const actor = faculty ?? { id: null, name: "Faculty advisor" };
   const approved = decision === "approve";
-  await update("approval_requests", req.id, {
-    status: approved ? "executed" : "rejected",
-    result: { ...(req.result ?? {}), faculty_decision: decision, faculty_note: note ?? null, faculty_decided_at: new Date().toISOString() },
-  });
+  const claimed = await one(
+    "UPDATE approval_requests SET status = $2, result = $3 WHERE id = $1 AND status = 'awaiting_faculty' RETURNING id",
+    [req.id, approved ? "executed" : "rejected", JSON.stringify({ ...(req.result ?? {}), faculty_decision: decision, faculty_note: note ?? null, faculty_decided_at: new Date().toISOString() })],
+  );
+  if (!claimed) throw new Error("This submission was already decided");
   if (req.event_id) {
     await update("events", req.event_id, { status: approved ? "approved" : "draft" });
     if (approved) {
@@ -166,7 +178,7 @@ export async function facultyDecision(approvalId: string, decision: "approve" | 
     }
   }
   await audit(actor as User, approved ? "faculty.approved" : "faculty.rejected", { title: req.title, note }, { eventId: req.event_id, approvedBy: actor.name });
-  await notify({ role: "president" }, `Faculty ${approved ? "approved" : "rejected"} the proposal`, req.title, req.event_id ? `/events/${req.event_id}` : "/approvals");
+  if (society) await notify({ role: "president", societyId: society }, `Faculty ${approved ? "approved" : "rejected"} the proposal`, req.title, req.event_id ? `/events/${req.event_id}` : "/approvals");
   return { status: approved ? "approved" : "rejected" };
 }
 
@@ -194,7 +206,7 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
       const sp = await one<Sponsor>("SELECT * FROM sponsors WHERE id = $1", [p.sponsor_id]);
       if (!sp) throw new Error("Sponsor not found");
       // The proposal travels as a link (the sender has no attachment support); the pixel marks the email opened.
-      const pixel = `<img src="${appUrl()}/api/track/sponsor/${sp.id}?t=${signToken(sp.id)}" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px" />`;
+      const pixel = `<img src="${appUrl()}/api/track/sponsor/${sp.id}?t=${signToken(`track:${sp.id}`, 365)}" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px" />`;
       const email = await sendEmail({
         to: String(p.to ?? sp.contact_email ?? `partnerships@${sp.company.toLowerCase().replace(/[^a-z0-9]+/g, "")}.example`),
         subject: String(p.subject),
@@ -206,7 +218,7 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
       });
       if (email.status === "failed") throw new Error(email.error ?? "Email failed");
       await update("sponsors", sp.id, sp.status === "found" ? { status: "contacted", contacted_at: new Date() } : { contacted_at: sp.contacted_at ?? new Date() });
-      return { email_id: email.id, to: email.to_addr, intended_to: email.intended_to, provider: email.provider, delivery: email.status, proposal: `${appUrl()}/api/outputs/${sp.event_id}/proposal.pdf` };
+      return { email_id: email.id, to: email.to_addr, intended_to: email.intended_to, provider: email.provider, delivery: email.status, proposal: outputsUrl(sp.event_id, "proposal.pdf") };
     }
     case "email.vendor": {
       const email = await sendEmail({
@@ -225,15 +237,20 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
     case "email.faculty": {
       const ev = await one<EventRow>("SELECT * FROM events WHERE id = $1", [p.event_id]);
       if (!ev) throw new Error("Event not found");
-      const faculty = await one<User>("SELECT * FROM users WHERE role = 'faculty_advisor' LIMIT 1");
+      const faculty = await one<User>(
+        "SELECT u.* FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.society_id = $1 AND m.role = 'faculty_advisor' LIMIT 1",
+        [ev.society_id],
+      );
+      const to = String(p.to ?? faculty?.email ?? "").trim();
+      if (!to) throw new Error("This society has no faculty advisor yet. Invite one in Settings → Members, then submit again.");
       const reqId = req?.id ?? "direct";
-      const link = `${appUrl()}/faculty/${reqId}?t=${signToken(reqId)}`;
+      const link = `${appUrl()}/faculty/${reqId}?t=${signToken(`faculty:${reqId}`, 60)}`;
       const html = `${String(p.html)}<p style="margin-top:20px">
 <a href="${link}&d=approve" style="background:#46a758;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;margin-right:8px">Approve proposal</a>
 <a href="${link}&d=reject" style="background:#e5484d;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Reject</a></p>
-<p style="font-size:13px">Review the full proposal: <a href="${appUrl()}/api/outputs/${ev.id}/proposal.pdf">PDF</a> · <a href="${appUrl()}/api/outputs/${ev.id}/proposal.docx">Word</a> · <a href="${appUrl()}/api/outputs/${ev.id}/budget.xlsx">Budget sheet</a></p>`;
+<p style="font-size:13px">Review the full proposal: <a href="${outputsUrl(ev.id, "proposal.pdf")}">PDF</a> · <a href="${outputsUrl(ev.id, "proposal.docx")}">Word</a> · <a href="${outputsUrl(ev.id, "budget.xlsx")}">Budget sheet</a></p>`;
       const email = await sendEmail({
-        to: String(p.to ?? faculty?.email),
+        to,
         subject: String(p.subject),
         html: emailShell("Event proposal for your approval", html),
         kind: "faculty_submission",
@@ -243,12 +260,14 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
       });
       if (email.status === "failed") throw new Error(email.error ?? "Email failed");
       await update("events", ev.id, { status: "pending_approval" });
-      return { email_id: email.id, to: email.to_addr, provider: email.provider, delivery: email.status, faculty_link: link };
+      return { email_id: email.id, to: email.to_addr, provider: email.provider, delivery: email.status };
     }
     case "publish.luma":
     case "publish.meetup": {
-      const ev = await one<EventRow & { venue_name: string | null; venue_capacity: number | null }>(
-        "SELECT e.*, v.name AS venue_name, v.capacity AS venue_capacity FROM events e LEFT JOIN venues v ON v.id = e.venue_id WHERE e.id = $1",
+      const ev = await one<EventRow & { venue_name: string | null; venue_capacity: number | null; university: string }>(
+        `SELECT e.*, v.name AS venue_name, v.capacity AS venue_capacity, u.name AS university FROM events e
+         JOIN societies s ON s.id = e.society_id JOIN universities u ON u.id = s.university_id
+         LEFT JOIN venues v ON v.id = e.venue_id WHERE e.id = $1`,
         [p.event_id],
       );
       if (!ev) throw new Error("Event not found");
@@ -259,7 +278,7 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
         date: ev.date,
         startTime: ev.start_time,
         endTime: ev.end_time,
-        venue: `${ev.venue_name ?? "TBC"}, Sunway University`,
+        venue: `${ev.venue_name ?? "TBC"}, ${ev.university}`,
         capacity: ev.venue_capacity ?? ev.pax,
       };
       const res = action === "publish.luma" ? await lumaCreateEvent(input) : await meetupCreateEvent(input);
@@ -330,7 +349,7 @@ export async function pushCalendar(eventId: string) {
     }
     created++;
   }
-  const feed = `${appUrl()}/api/outputs/${ev.id}/timeline.ics`;
+  const feed = outputsUrl(ev.id, "timeline.ics", 365);
   return {
     provider: mode,
     created,
@@ -350,12 +369,17 @@ export async function icsForEvent(eventId: string) {
   ]);
 }
 
-export function speakerEmail(sp: Pick<Speaker, "name">, ev: Pick<EventRow, "title" | "date" | "start_time" | "end_time" | "topic">, venue: Pick<Venue, "name"> | null, society: string, sender: Pick<User, "name" | "role">, followUp = false) {
-  const first = sp.name.replace(/^(dr\.?|prof\.?|mr\.?|ms\.?)\s+/i, "").split(" ")[0];
+export function speakerEmail(sp: Pick<Speaker, "name">, ev: Pick<EventRow, "title" | "date" | "start_time" | "end_time" | "topic" | "pax">, venue: Pick<Venue, "name"> | null, societyName: string, sender: Pick<User, "name" | "role">, followUp = false, universityName = "") {
+  const first = esc(sp.name.replace(/^(dr\.?|prof\.?|mr\.?|ms\.?)\s+/i, "").split(" ")[0]);
+  const society = esc(societyName);
+  const at = universityName ? ` at ${esc(universityName)}` : "";
+  ev = { ...ev, title: esc(ev.title), topic: ev.topic ? esc(ev.topic) : ev.topic };
+  venue = venue ? { name: esc(venue.name) } : null;
+  sender = { ...sender, name: esc(sender.name) };
   const subject = followUp ? `Following up: speaking invitation, ${ev.title}` : `Speaking invitation, ${ev.title} (${fmtDate(ev.date)})`;
   const body = followUp
     ? `<p>Hi ${first},</p><p>Just following up on our invitation to speak at <b>${ev.title}</b> on ${fmtDate(ev.date)}. We would love to have you, even a 30-minute talk or a panel slot would mean a lot to our members.</p><p>Could you let us know by the end of the week? Happy to work around your schedule.</p><p>Warm regards,<br>${sender.name}<br>${society}</p>`
-    : `<p>Hi ${first},</p><p>I'm writing from the <b>${society}</b> at Sunway University. We're organising <b>${ev.title}</b> on <b>${fmtDate(ev.date)}</b>, ${ev.start_time} to ${ev.end_time}${venue ? ` at ${venue.name}` : ""}, for around 150 students.</p><p>Given your work on ${ev.topic ?? "this topic"}, we'd be honoured to invite you to give a 30 to 40 minute talk followed by Q&amp;A. We will cover parking and provide a token of appreciation.</p><p>Would you be available? If so, we'll send the details and the university's external speaker declaration form.</p><p>Warm regards,<br>${sender.name}<br>${society}</p>`;
+    : `<p>Hi ${first},</p><p>I'm writing from the <b>${society}</b>${at}. We're organising <b>${ev.title}</b> on <b>${fmtDate(ev.date)}</b>, ${ev.start_time} to ${ev.end_time}${venue ? ` at ${venue.name}` : ""}, for around ${ev.pax} students.</p><p>Given your work on ${ev.topic ?? "this topic"}, we'd be honoured to invite you to give a 30 to 40 minute talk followed by Q&amp;A. We will cover parking and provide a token of appreciation.</p><p>Would you be available? If so, we'll send the details and the university's external speaker declaration form.</p><p>Warm regards,<br>${sender.name}<br>${society}</p>`;
   return { subject, html: emailShell(followUp ? "Following up" : "Speaking invitation", body) };
 }
 

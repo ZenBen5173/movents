@@ -1,4 +1,5 @@
 import "server-only";
+import { esc } from "../html";
 import { id, insert, update } from "../db";
 import type { Email } from "../types";
 
@@ -62,6 +63,22 @@ export async function sendEmail(input: {
       error: err instanceof Error ? err.message : String(err),
     }))!;
   }
+}
+
+/**
+ * Account emails (sign-in links, invites). Sent straight to the recipient,
+ * never stored in the outbox and never redirected, because they carry
+ * credentials. Without a provider the link is printed to the server log in
+ * development and refused in production.
+ */
+export async function sendSystemEmail(to: string, subject: string, html: string, devLink?: string) {
+  const provider = emailProvider();
+  if (provider === "outbox") {
+    if (process.env.NODE_ENV === "production") throw new Error("Email is not configured on this server. Ask the administrator to set up an email provider.");
+    console.info(`[email:dev] To ${to}: ${subject}${devLink ? `\n  ${devLink}` : ""}`);
+    return;
+  }
+  await deliver(provider, to, subject, html);
 }
 
 async function deliver(provider: EmailProvider, to: string, subject: string, html: string): Promise<string | null> {
@@ -139,7 +156,7 @@ async function sendResend(to: string, subject: string, html: string) {
 
 export function emailShell(title: string, inner: string) {
   return `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:620px;margin:auto;color:#1c2024">
-<div style="padding:16px 20px;background:#3e63dd;color:#fff;border-radius:10px 10px 0 0;font-weight:600">${title}</div>
+<div style="padding:16px 20px;background:#3e63dd;color:#fff;border-radius:10px 10px 0 0;font-weight:600">${esc(title)}</div>
 <div style="padding:20px;border:1px solid #d9d9e0;border-top:0;border-radius:0 0 10px 10px;line-height:1.55">${inner}</div>
 <p style="font-size:12px;color:#60646c;margin-top:12px">Sent by Movents on behalf of the society. Every send is logged in the society's audit trail.</p></div>`;
 }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parsePrompt, buildTimeline, checkLeadTimes, selectVenue, composeBudget, predictAttendance, buildRunsheet, nps, feedbackThemes, parseSignals } from "../src/lib/planning";
+import { parsePrompt, buildTimeline, checkLeadTimes, selectVenue, composeBudget, predictAttendance, buildRunsheet, nps, feedbackThemes, parseSignals, type Supplier } from "../src/lib/planning";
 import { SUNWAY_SOP } from "../src/lib/sop-default";
 import { REFERENCE_SUPPLIERS } from "../src/lib/integrations/reference-data";
 import { decide, canDecide } from "../src/lib/rbac";
@@ -53,7 +53,7 @@ test("venue: skips clash and too-small rooms", () => {
 });
 
 test("budget adapt loop brings RM3,000 demo within cap incl. 10% contingency", () => {
-  const suppliers: Record<string, any[]> = {};
+  const suppliers: Record<string, Supplier[]> = {};
   for (const s of REFERENCE_SUPPLIERS) (suppliers[s.category] ??= []).push({ ...s, unit_price: s.unit_price! });
   const pred = predictAttendance(150, 0, 0.68, 160).predicted;
   const r = composeBudget({ pax: 150, predicted: pred, cap: 3000, contingencyPct: 10, foodBufferPct: 5, suppliers, venueCost: 0, speakers: 3, crew: 25, coreCommittee: 12, lanyardsForAttendees: false });
@@ -103,7 +103,7 @@ test("rbac matches the spec table", () => {
 });
 
 test("tight budget walks deeper adapt steps and reports shortfall honestly", () => {
-  const suppliers: Record<string, any[]> = {};
+  const suppliers: Record<string, Supplier[]> = {};
   for (const s of REFERENCE_SUPPLIERS) (suppliers[s.category] ??= []).push({ ...s, unit_price: s.unit_price! });
   const r = composeBudget({ pax: 80, predicted: 54, cap: 1500, contingencyPct: 10, foodBufferPct: 5, suppliers, venueCost: 0, speakers: 3, crew: 25, coreCommittee: 12, lanyardsForAttendees: false });
   assert.ok(r.iterations.length >= 5);

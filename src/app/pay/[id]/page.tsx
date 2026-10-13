@@ -18,7 +18,7 @@ export default async function PayPage({ params, searchParams }: { params: Promis
   return (
     <div className="grid min-h-dvh place-items-center px-5">
       <div className="w-full max-w-sm rounded-2xl border-[1.5px] border-ink bg-card p-6 shadow-[4px_4px_0_0_#161514]">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground"><CreditCard className="size-4" />{p.provider === "stripe" ? "Stripe Checkout (test mode)" : "Mock checkout, no real money moves"}</div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground"><CreditCard className="size-4" />{p.provider === "stripe" ? "Secure checkout by Stripe" : "Test checkout, no real money moves"}</div>
         <p className="mt-4 text-sm text-muted-foreground">Deposit to</p>
         <p className="font-semibold">{p.vendor}</p>
         {p.event && <p className="text-xs text-muted-foreground">for {p.event}</p>}

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { query } from "@/lib/db";
+import { pageUser } from "@/lib/guard";
+import { seesAll, visibleSql } from "@/lib/members";
 import { PageHeader } from "@/components/app/ui";
 import { AuditFeed } from "@/components/app/audit-feed";
 import type { AuditLog } from "@/lib/types";
@@ -8,10 +10,19 @@ export const dynamic = "force-dynamic";
 
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ event?: string }> }) {
   const { event } = await searchParams;
-  const events = await query<{ id: string; title: string }>("SELECT id, title FROM events ORDER BY created_at DESC");
+  const user = await pageUser();
+  const events = await query<{ id: string; title: string }>(
+    `SELECT e.id, e.title FROM events e WHERE e.society_id = $1 AND ${visibleSql(user, 2)} ORDER BY e.created_at DESC`,
+    [user.society_id, user.id],
+  );
+  // Oversight roles see the whole society's log; others see their events and their own actions.
   const rows = await query<AuditLog & { event_title: string | null }>(
-    `SELECT a.*, e.title AS event_title FROM audit_logs a LEFT JOIN events e ON e.id = a.event_id ${event ? "WHERE a.event_id = $1" : ""} ORDER BY a.created_at DESC LIMIT 400`,
-    event ? [event] : [],
+    `SELECT a.*, e.title AS event_title FROM audit_logs a LEFT JOIN events e ON e.id = a.event_id
+     WHERE a.society_id = $1
+       AND ($3 OR a.user_id = $2 OR (e.id IS NOT NULL AND ${visibleSql(user, 2)}))
+       ${event ? "AND a.event_id = $4" : ""}
+     ORDER BY a.created_at DESC LIMIT 400`,
+    event ? [user.society_id, user.id, seesAll(user), event] : [user.society_id, user.id, seesAll(user)],
   );
   return (
     <div>

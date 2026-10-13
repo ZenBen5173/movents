@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { one } from "@/lib/db";
+import { currentUser } from "@/lib/session";
+import { isMember } from "@/lib/members";
 import { buildIcs } from "@/lib/integrations/gcal";
 import { getMeeting, klParts } from "@/lib/meetings";
 
 export const dynamic = "force-dynamic";
 
-/** One meeting as an .ics file. Readable by link, like the event outputs, so calendar apps can open it. */
+/** One meeting as an .ics file, for people on the event's team. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const m = await getMeeting(id);
-  if (!m) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const user = await currentUser();
+  if (!m || !user || !(await isMember(user, m.event_id))) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const ev = await one<{ title: string }>("SELECT title FROM events WHERE id = $1", [m.event_id]);
   const start = klParts(m.starts_at);
   const endIso = new Date(Date.parse(m.starts_at) + m.duration_min * 60_000).toISOString();
