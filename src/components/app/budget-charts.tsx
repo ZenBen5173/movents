@@ -16,7 +16,7 @@ function Donut({ slices, total, center, sub }: { slices: Slice[]; total: number;
   let acc = 0;
   const active = slices.find((s) => s.key === hover);
   return (
-    <div className="flex items-center gap-6">
+    <div className="flex flex-col items-center gap-4 min-[420px]:flex-row min-[420px]:gap-6">
       <div className="relative size-[180px] shrink-0">
         <svg viewBox="0 0 180 180" className="size-full -rotate-90">
           <defs>
