@@ -306,7 +306,7 @@ export type Creative = {
   image_prompt: string | null;
   image_data: string | null;
   image_url: string | null;
-  image_source: "template" | "nano-banana" | "workbuddy" | "upload";
+  image_source: "template" | "nano-banana" | "assistant" | "workbuddy" | "upload";
   width: number;
   height: number;
   status: "draft" | "pending_approval" | "approved" | "posted";

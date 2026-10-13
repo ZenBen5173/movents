@@ -1,5 +1,6 @@
 "use server";
 
+import { publicError } from "@/lib/errors";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { currentUser, requireUser } from "@/lib/session";
@@ -21,7 +22,7 @@ async function run(fn: () => Promise<string | void>): Promise<Res> {
     revalidatePath("/", "layout");
     return { ok: true, message };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Something went wrong" };
+    return { ok: false, error: publicError(err) };
   }
 }
 

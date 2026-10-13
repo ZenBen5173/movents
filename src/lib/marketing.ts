@@ -1,4 +1,5 @@
 import "server-only";
+import { fetchMedia, fromDataUrl } from "./media";
 import { id, insert, one, query, update } from "./db";
 import { appUrl, fmtDate } from "./appurl";
 import { generateImage, nanoBananaEnabled } from "./integrations/nanobanana";
@@ -129,17 +130,20 @@ export async function refreshPrompts(eventId: string) {
   return Promise.all(rows.map(async (r) => (await update<Creative>("creatives", r.id, { image_prompt: promptFor(r.kind, c, r.width, r.height) })) ?? r));
 }
 
-/** Still a placeholder, or an image too small/flat to be real AI art (e.g. drawn with code). */
+/** Still the generated placeholder poster. */
 export function needsImage(c: Pick<Creative, "kind" | "image_source" | "image_data">) {
-  if (c.kind === "video") return c.image_source === "template";
-  return c.image_source === "template" || Boolean(c.image_data && c.image_data.length * 0.75 < 60_000);
+  return c.image_source === "template";
 }
 
+/**
+ * Attach media to a creative. Accepts a data: URL or a public https URL; the
+ * bytes are checked (real PNG/JPEG/WebP/GIF/MP4/WebM/MOV, size-capped) and
+ * stored, so the app never redirects to or embeds third-party URLs.
+ */
 export async function setImage(creativeId: string, image: string, source: Creative["image_source"]) {
-  const isData = /^data:(image|video)\//.test(image);
-  if (!isData && !/^https:\/\//.test(image)) throw new Error("Media must be an https URL or a data:image/… / data:video/… base64 URL");
-  if (isData && image.length > 40_000_000) throw new Error("Media too large (max ~30 MB)");
-  return update<Creative>("creatives", creativeId, { image_data: isData ? image : null, image_url: isData ? null : image, image_source: source, updated_at: new Date() });
+  const media = image.startsWith("data:") ? fromDataUrl(image) : /^https:\/\//.test(image) ? await fetchMedia(image) : null;
+  if (!media) throw new Error("Media must be an https URL or a base64 data: URL");
+  return update<Creative>("creatives", creativeId, { image_data: media.dataUrl, image_url: null, image_source: source, updated_at: new Date() });
 }
 
 export async function regenerateImage(creativeId: string) {

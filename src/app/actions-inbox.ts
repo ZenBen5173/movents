@@ -1,5 +1,6 @@
 "use server";
 
+import { publicError } from "@/lib/errors";
 import { revalidatePath } from "next/cache";
 import { query } from "@/lib/db";
 import { requireUser } from "@/lib/session";
@@ -25,6 +26,6 @@ export async function setEventMailbox(eventId: string, address: string, label?: 
     revalidatePath(`/events/${eventId}/inbox`);
     return { ok: true, message: "Mailbox saved" };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: publicError(err) };
   }
 }

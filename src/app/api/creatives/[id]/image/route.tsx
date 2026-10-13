@@ -3,6 +3,8 @@ import path from "node:path";
 import { ImageResponse } from "next/og";
 import { NextResponse } from "next/server";
 import { one } from "@/lib/db";
+import { currentUser } from "@/lib/session";
+import { isMember } from "@/lib/members";
 import { appUrl, fmtDate } from "@/lib/appurl";
 import type { Creative, EventRow, Venue } from "@/lib/types";
 
@@ -34,20 +36,35 @@ function bars(seed: string) {
   });
 }
 
-/** Serves a creative: the attached Nano Banana / WorkBuddy image, or a branded "admit one" poster rendered from live event data. */
+/** Serves a creative: the attached image or video, or a branded "admit one" poster rendered from live event data. */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const c = await one<Creative>("SELECT * FROM creatives WHERE id = $1", [id]);
   if (!c) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const download = new URL(req.url).searchParams.has("download");
+  // Approved or posted creatives are public (event page, social posts); drafts are for the team.
+  const isPublic = c.status === "approved" || c.status === "posted";
+  if (!isPublic) {
+    const user = await currentUser();
+    if (!user || !(await isMember(user, c.event_id))) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  const url = new URL(req.url);
+  const download = url.searchParams.has("download");
+  // Versioned URLs (?v=updated_at) never change content, so they can be cached hard.
+  const cache = url.searchParams.has("v") && isPublic ? "public, max-age=31536000, immutable" : "private, max-age=60";
   if (c.image_data) {
     const [meta, b64] = c.image_data.split(",");
     const mime = meta.slice(5, meta.indexOf(";"));
+    const safe = /^(image\/(png|jpeg|gif|webp)|video\/(mp4|webm|quicktime))$/.test(mime) ? mime : "application/octet-stream";
     return new NextResponse(new Uint8Array(Buffer.from(b64, "base64")), {
-      headers: { "content-type": mime, "cache-control": "no-store", ...(download ? { "content-disposition": `attachment; filename="${c.kind}.${mime.split("/")[1]}"` } : {}) },
+      headers: {
+        "content-type": safe,
+        "cache-control": cache,
+        "x-content-type-options": "nosniff",
+        "content-security-policy": "default-src 'none'; sandbox",
+        ...(download || safe === "application/octet-stream" ? { "content-disposition": `attachment; filename="${c.kind}.${safe.split("/")[1]}"` } : {}),
+      },
     });
   }
-  if (c.image_url) return NextResponse.redirect(c.image_url);
 
   const ev = await one<EventRow & { society: string; uni: string }>("SELECT e.*, s.name AS society, u.short_name AS uni FROM events e JOIN societies s ON s.id = e.society_id JOIN universities u ON u.id = s.university_id WHERE e.id = $1", [c.event_id]);
   if (!ev) return NextResponse.json({ error: "Event not found" }, { status: 404 });
@@ -106,5 +123,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     { width: W, height: H, fonts: await loadFonts() },
   );
   if (download) res.headers.set("content-disposition", `attachment; filename="${c.kind}.png"`);
+  res.headers.set("cache-control", cache);
   return res;
 }

@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { publicError } from "@/lib/errors";
 import { consumeLoginLink, normaliseEmail, sendLoginLink } from "@/lib/auth/accounts";
 import { clientIp, rateLimit, RateLimitError } from "@/lib/ratelimit";
 import { endSession, startSession, currentUser } from "@/lib/session";
@@ -18,7 +19,7 @@ export async function requestLoginLink(_prev: LoginState, form: FormData): Promi
     return { ok: true, sentTo: email };
   } catch (err) {
     if (!(err instanceof RateLimitError)) console.error("[auth] login link failed", err);
-    return { ok: false, error: err instanceof Error ? err.message : "Could not send the link." };
+    return { ok: false, error: publicError(err) };
   }
 }
 

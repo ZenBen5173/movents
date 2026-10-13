@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { FileText } from "lucide-react";
 import { one } from "@/lib/db";
-import { verifyToken, fmtDate, fmtRM } from "@/lib/appurl";
+import { verifyToken, fmtDate, fmtRM, outputsUrl } from "@/lib/appurl";
 import type { ApprovalRequest, EventRow } from "@/lib/types";
 import { FacultyDecision } from "./decision";
 import { BrandMark } from "@/components/app/brand-mark";
@@ -14,7 +14,7 @@ export default async function FacultyPage({ params, searchParams }: { params: Pr
   const { t, d } = await searchParams;
   const req = await one<ApprovalRequest>("SELECT * FROM approval_requests WHERE id = $1", [id]);
   if (!req || req.action_type !== "email.faculty") notFound();
-  const valid = verifyToken(id, t);
+  const valid = verifyToken(`faculty:${id}`, t);
   const ev = req.event_id ? await one<EventRow & { venue: string | null; society: string }>("SELECT e.*, v.name AS venue, s.name AS society FROM events e LEFT JOIN venues v ON v.id = e.venue_id JOIN societies s ON s.id = e.society_id WHERE e.id = $1", [req.event_id]) : null;
   return (
     <div className="mx-auto min-h-dvh max-w-xl px-5 py-12">
@@ -29,7 +29,7 @@ export default async function FacultyPage({ params, searchParams }: { params: Pr
       {ev && (
         <div className="mt-5 grid gap-2 sm:grid-cols-3">
           {[["Proposal (PDF)", "proposal.pdf"], ["Budget sheet", "budget.xlsx"], ["Risk register", "risks.pdf"]].map(([l, f]) => (
-            <a key={f} href={`/api/outputs/${ev.id}/${f}`} target="_blank" className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm transition-colors hover:border-primary/40">
+            <a key={f} href={valid ? outputsUrl(ev.id, f, 1) : "#"} target="_blank" className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-sm transition-colors hover:border-primary/40">
               <FileText className="size-4 text-primary" />{l}
             </a>
           ))}

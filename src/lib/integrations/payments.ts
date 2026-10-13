@@ -1,21 +1,20 @@
 import "server-only";
 import crypto from "node:crypto";
 
+import { appUrl } from "../appurl";
+
 /**
- * Vendor deposits. Stripe Checkout when STRIPE_SECRET_KEY is set (use a test
- * key: sk_test_...), otherwise an in-app mock checkout that records the same
- * state transitions.
+ * Vendor deposits through Stripe Checkout when STRIPE_SECRET_KEY is set.
+ * Without a key, development gets an in-app test checkout; production
+ * reports payments as not configured.
  */
-
-export function paymentsMode() {
-  return process.env.STRIPE_SECRET_KEY ? "stripe" : "mock";
-}
-
-function appUrl() {
-  return process.env.APP_URL ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+export function paymentsMode(): "stripe" | "mock" | "off" {
+  if (process.env.STRIPE_SECRET_KEY) return "stripe";
+  return process.env.NODE_ENV === "production" ? "off" : "mock";
 }
 
 export async function createCheckout(p: { paymentId: string; amount: number; description: string; currency?: string }) {
+  if (paymentsMode() === "off") throw new Error("Online payments are not set up for this workspace. Pay the supplier directly and record it.");
   if (paymentsMode() === "mock") {
     return { url: `${appUrl()}/pay/${p.paymentId}`, ref: `mock_${p.paymentId}` };
   }
@@ -34,6 +33,7 @@ export async function createCheckout(p: { paymentId: string; amount: number; des
     method: "POST",
     headers: { authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, "content-type": "application/x-www-form-urlencoded" },
     body,
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`Stripe ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const json = (await res.json()) as { id: string; url: string };
@@ -43,6 +43,7 @@ export async function createCheckout(p: { paymentId: string; amount: number; des
 export async function retrieveCheckout(ref: string) {
   const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${ref}`, {
     headers: { authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}` },
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`Stripe ${res.status}`);
   return (await res.json()) as { payment_status: string; status: string };

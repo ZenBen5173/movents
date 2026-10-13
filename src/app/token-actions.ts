@@ -1,5 +1,6 @@
 "use server";
 
+import { publicError } from "@/lib/errors";
 import { revalidatePath } from "next/cache";
 import { currentUser } from "@/lib/session";
 import { createApiToken, revokeApiToken, revokeOAuthGrant } from "@/lib/auth/api-tokens";
@@ -21,7 +22,7 @@ export async function createTokenAction(name: string): Promise<Res<string>> {
     revalidatePath("/settings");
     return { ok: true, data: token };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Could not create token" };
+    return { ok: false, error: publicError(err) };
   }
 }
 
@@ -33,7 +34,7 @@ export async function revokeTokenAction(tokenId: string): Promise<Res> {
     revalidatePath("/settings");
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Could not revoke token" };
+    return { ok: false, error: publicError(err) };
   }
 }
 
@@ -45,6 +46,6 @@ export async function revokeGrantAction(clientId: string): Promise<Res> {
     revalidatePath("/settings");
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Could not disconnect" };
+    return { ok: false, error: publicError(err) };
   }
 }

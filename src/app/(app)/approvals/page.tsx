@@ -1,5 +1,5 @@
 import { pageUser } from "@/lib/guard";
-import { currentUser } from "@/lib/session";
+import { visibleSql } from "@/lib/members";
 import { query } from "@/lib/db";
 import { canDecide } from "@/lib/rbac";
 import { Empty, PageHeader } from "@/components/app/ui";
@@ -28,7 +28,9 @@ export default async function BackstagePage() {
      FROM approval_requests a
      LEFT JOIN users u ON u.id = a.requested_by LEFT JOIN users d ON d.id = a.decided_by LEFT JOIN events e ON e.id = a.event_id
      LEFT JOIN vendors v ON v.id = a.payload->>'vendor_id' LEFT JOIN speakers s ON s.id = a.payload->>'speaker_id'
+     WHERE a.society_id = $1 AND ($2 OR a.requested_by = $3 OR (e.id IS NOT NULL AND ${visibleSql(user, 3)}))
      ORDER BY CASE a.status WHEN 'pending' THEN 0 WHEN 'awaiting_faculty' THEN 1 ELSE 2 END, a.created_at DESC LIMIT 200`,
+    [user.society_id, user.role !== "committee", user.id],
   );
   const items: ApprovalItem[] = rows.map((r) => ({
     ...r,

@@ -1,5 +1,6 @@
 "use server";
 
+import { publicError } from "@/lib/errors";
 import { revalidatePath } from "next/cache";
 import { one, query } from "@/lib/db";
 import { requireUser } from "@/lib/session";
@@ -9,7 +10,7 @@ import { createMeetingRecord, makeTaskForAction, meetingsReady, patchMeeting, ty
 
 type Res<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
-const fail = (err: unknown) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) });
+const fail = (err: unknown) => ({ ok: false as const, error: publicError(err) });
 const refresh = (eventId: string) => revalidatePath(`/events/${eventId}/meetings`);
 
 async function onMeeting(meetingId: string) {

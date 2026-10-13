@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { appUrl } from "@/lib/appurl";
+import { outputsUrl, appUrl } from "@/lib/appurl";
 import { FileBrowser, type FolderNode } from "@/components/app/file-browser";
 import { canViewEvent } from "@/lib/guard";
 
@@ -18,7 +18,7 @@ export default async function EventFiles({ params }: { params: Promise<{ id: str
     query<{ id: string; kind: string; image_url: string | null }>("SELECT id, kind, image_url FROM creatives WHERE event_id = $1 ORDER BY created_at", [id]),
   ]);
   const b = `/api/outputs/${id}`;
-  const feed = `${appUrl()}${b}/timeline.ics`;
+  const feed = outputsUrl(id, "timeline.ics", 365);
   const hasReport = report.length > 0 || fb.length > 0;
   const clean = (n: string) => n.split(" — ")[0];
 

@@ -15,9 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user.society_id) redirect("/onboarding");
   const [pending, workspaces, notes, society, projects, universities] = await Promise.all([
     query<ApprovalRequest>(
-      `SELECT a.id, a.status, a.approver_role, a.approver_department FROM approval_requests a
-       LEFT JOIN events e ON e.id = a.event_id LEFT JOIN users r ON r.id = a.requested_by
-       WHERE a.status IN ('pending','awaiting_faculty') AND coalesce(e.society_id, r.society_id) = $1`,
+      "SELECT id, status, approver_role, approver_department FROM approval_requests WHERE society_id = $1 AND status IN ('pending','awaiting_faculty')",
       [user.society_id],
     ),
     listWorkspaces(user.id),

@@ -11,7 +11,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const url = new URL(req.url);
   const ref = req.headers.get("referer") ?? "";
   const inApp = /(?:^|;\s*)ep_uid=/.test(req.headers.get("cookie") ?? "") || (ref && [url.origin, appUrl()].some((o) => ref.startsWith(o)));
-  if (!inApp && verifyToken(id, url.searchParams.get("t"))) {
+  if (!inApp && verifyToken(`track:${id}`, url.searchParams.get("t"))) {
     await query("UPDATE sponsors SET status = 'opened', opened_at = now() WHERE id = $1 AND status = 'contacted'", [id]).catch(() => null);
   }
   return new Response(new Uint8Array(GIF), {

@@ -3,6 +3,9 @@ import { loadBundle, proposalDoc, reportDoc, riskDoc, runsheetDoc, speakerDoc } 
 import { renderDocx, renderPdf } from "@/lib/docs/render";
 import { budgetCsv, budgetXlsx, riskXlsx } from "@/lib/docs/xlsx";
 import { icsForEvent } from "@/lib/actions";
+import { verifyToken } from "@/lib/appurl";
+import { currentUser } from "@/lib/session";
+import { isMember } from "@/lib/members";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +20,16 @@ const TYPES: Record<string, string> = {
 /**
  * Every output is rendered on request from the live database, so a link in an
  * email or in the agent trace always opens the current version.
- * Outputs are readable by link (faculty advisors open them from email).
+ * Readable by the event's team, or with a signed link (faculty advisors,
+ * sponsors and calendar subscriptions open them without an account).
  */
 export async function GET(req: Request, { params }: { params: Promise<{ eventId: string; file: string }> }) {
   const { eventId, file } = await params;
+  const signed = verifyToken(`outputs:${eventId}`, new URL(req.url).searchParams.get("t"));
+  if (!signed) {
+    const user = await currentUser();
+    if (!user || !(await isMember(user, eventId))) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   const [name, ext] = file.split(".");
   if (name === "timeline" && ext === "ics") {
     const ics = await icsForEvent(eventId);

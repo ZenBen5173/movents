@@ -2,7 +2,7 @@ import "server-only";
 import { audit, notify } from "./audit";
 import { id, insert, one, query, update } from "./db";
 import { ACTION_LABEL, canDecide, decide } from "./rbac";
-import { appUrl, fmtDate, fmtRM, signToken } from "./appurl";
+import { appUrl, fmtDate, fmtRM, outputsUrl, signToken } from "./appurl";
 import { emailShell, sendEmail } from "./integrations/email";
 import { buildIcs, calendarMode, createGoogleEvent } from "./integrations/gcal";
 import { lumaCreateEvent, meetupCreateEvent } from "./integrations/ticketing";
@@ -44,6 +44,7 @@ export async function gate(
   const approval = await insert<ApprovalRequest>("approval_requests", {
     id: id("apr"),
     event_id: opts.eventId ?? null,
+    society_id: user.society_id,
     action_type: action,
     title,
     payload,
@@ -114,11 +115,7 @@ function summarise(p: Payload) {
 }
 
 export async function decideApproval(user: User, approvalId: string, decision: "approve" | "reject", note?: string) {
-  const req = await one<ApprovalRequest>(
-    `SELECT a.* FROM approval_requests a LEFT JOIN events e ON e.id = a.event_id LEFT JOIN users r ON r.id = a.requested_by
-     WHERE a.id = $1 AND coalesce(e.society_id, r.society_id) = $2`,
-    [approvalId, user.society_id],
-  );
+  const req = await one<ApprovalRequest>("SELECT * FROM approval_requests WHERE id = $1 AND society_id = $2", [approvalId, user.society_id]);
   if (!req) throw new Error("Approval request not found");
   if (req.status !== "pending") throw new Error(`Request is already ${req.status}`);
   if (!canDecide(user, req)) throw new Error(`Only a ${req.approver_role}${req.approver_department ? ` (${req.approver_department})` : ""} can decide this`);
@@ -202,7 +199,7 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
       const sp = await one<Sponsor>("SELECT * FROM sponsors WHERE id = $1", [p.sponsor_id]);
       if (!sp) throw new Error("Sponsor not found");
       // The proposal travels as a link (the sender has no attachment support); the pixel marks the email opened.
-      const pixel = `<img src="${appUrl()}/api/track/sponsor/${sp.id}?t=${signToken(sp.id)}" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px" />`;
+      const pixel = `<img src="${appUrl()}/api/track/sponsor/${sp.id}?t=${signToken(`track:${sp.id}`, 365)}" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px" />`;
       const email = await sendEmail({
         to: String(p.to ?? sp.contact_email ?? `partnerships@${sp.company.toLowerCase().replace(/[^a-z0-9]+/g, "")}.example`),
         subject: String(p.subject),
@@ -214,7 +211,7 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
       });
       if (email.status === "failed") throw new Error(email.error ?? "Email failed");
       await update("sponsors", sp.id, sp.status === "found" ? { status: "contacted", contacted_at: new Date() } : { contacted_at: sp.contacted_at ?? new Date() });
-      return { email_id: email.id, to: email.to_addr, intended_to: email.intended_to, provider: email.provider, delivery: email.status, proposal: `${appUrl()}/api/outputs/${sp.event_id}/proposal.pdf` };
+      return { email_id: email.id, to: email.to_addr, intended_to: email.intended_to, provider: email.provider, delivery: email.status, proposal: outputsUrl(sp.event_id, "proposal.pdf") };
     }
     case "email.vendor": {
       const email = await sendEmail({
@@ -238,11 +235,11 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
         [ev.society_id],
       );
       const reqId = req?.id ?? "direct";
-      const link = `${appUrl()}/faculty/${reqId}?t=${signToken(reqId)}`;
+      const link = `${appUrl()}/faculty/${reqId}?t=${signToken(`faculty:${reqId}`, 60)}`;
       const html = `${String(p.html)}<p style="margin-top:20px">
 <a href="${link}&d=approve" style="background:#46a758;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;margin-right:8px">Approve proposal</a>
 <a href="${link}&d=reject" style="background:#e5484d;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Reject</a></p>
-<p style="font-size:13px">Review the full proposal: <a href="${appUrl()}/api/outputs/${ev.id}/proposal.pdf">PDF</a> · <a href="${appUrl()}/api/outputs/${ev.id}/proposal.docx">Word</a> · <a href="${appUrl()}/api/outputs/${ev.id}/budget.xlsx">Budget sheet</a></p>`;
+<p style="font-size:13px">Review the full proposal: <a href="${outputsUrl(ev.id, "proposal.pdf")}">PDF</a> · <a href="${outputsUrl(ev.id, "proposal.docx")}">Word</a> · <a href="${outputsUrl(ev.id, "budget.xlsx")}">Budget sheet</a></p>`;
       const email = await sendEmail({
         to: String(p.to ?? faculty?.email),
         subject: String(p.subject),
@@ -254,12 +251,14 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
       });
       if (email.status === "failed") throw new Error(email.error ?? "Email failed");
       await update("events", ev.id, { status: "pending_approval" });
-      return { email_id: email.id, to: email.to_addr, provider: email.provider, delivery: email.status, faculty_link: link };
+      return { email_id: email.id, to: email.to_addr, provider: email.provider, delivery: email.status };
     }
     case "publish.luma":
     case "publish.meetup": {
-      const ev = await one<EventRow & { venue_name: string | null; venue_capacity: number | null }>(
-        "SELECT e.*, v.name AS venue_name, v.capacity AS venue_capacity FROM events e LEFT JOIN venues v ON v.id = e.venue_id WHERE e.id = $1",
+      const ev = await one<EventRow & { venue_name: string | null; venue_capacity: number | null; university: string }>(
+        `SELECT e.*, v.name AS venue_name, v.capacity AS venue_capacity, u.name AS university FROM events e
+         JOIN societies s ON s.id = e.society_id JOIN universities u ON u.id = s.university_id
+         LEFT JOIN venues v ON v.id = e.venue_id WHERE e.id = $1`,
         [p.event_id],
       );
       if (!ev) throw new Error("Event not found");
@@ -270,7 +269,7 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
         date: ev.date,
         startTime: ev.start_time,
         endTime: ev.end_time,
-        venue: `${ev.venue_name ?? "TBC"}, Sunway University`,
+        venue: `${ev.venue_name ?? "TBC"}, ${ev.university}`,
         capacity: ev.venue_capacity ?? ev.pax,
       };
       const res = action === "publish.luma" ? await lumaCreateEvent(input) : await meetupCreateEvent(input);
@@ -341,7 +340,7 @@ export async function pushCalendar(eventId: string) {
     }
     created++;
   }
-  const feed = `${appUrl()}/api/outputs/${ev.id}/timeline.ics`;
+  const feed = outputsUrl(ev.id, "timeline.ics", 365);
   return {
     provider: mode,
     created,

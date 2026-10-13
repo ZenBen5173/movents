@@ -100,6 +100,12 @@ ALTER TABLE notifications ADD COLUMN IF NOT EXISTS society_id text;
 UPDATE notifications n SET society_id = u.society_id FROM users u WHERE n.society_id IS NULL AND u.id = n.user_id;
 CREATE INDEX IF NOT EXISTS idx_notifications_society ON notifications (society_id, role, created_at DESC);
 
+ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS society_id text;
+UPDATE approval_requests a SET society_id = e.society_id FROM events e WHERE a.society_id IS NULL AND e.id = a.event_id;
+UPDATE approval_requests a SET society_id = u.society_id FROM users u WHERE a.society_id IS NULL AND u.id = a.requested_by;
+CREATE INDEX IF NOT EXISTS idx_approvals_society ON approval_requests (society_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_approval ON audit_logs ((details->>'approval_id')) WHERE action = 'approval.requested';
+
 CREATE TABLE IF NOT EXISTS rate_limits (
   key text PRIMARY KEY,
   window_start timestamptz NOT NULL,
