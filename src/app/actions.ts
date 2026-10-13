@@ -570,11 +570,12 @@ export async function regenCreative(creativeId: string) {
   }, ["/events"]);
 }
 
-export async function uploadCreative(creativeId: string, dataUrl: string) {
+/** After the browser uploads straight to Blob: check the file and attach it. */
+export async function finishCreativeUpload(creativeId: string, key: string) {
   return wrap(async () => {
     const user = await onTeam("creatives", creativeId);
-    const { setImage } = await import("@/lib/marketing");
-    const c = await setImage(creativeId, dataUrl, "upload");
+    const { attachUploadedMedia } = await import("@/lib/marketing");
+    const c = await attachUploadedMedia(creativeId, String(key));
     await audit(user, "marketing.media_uploaded", { creative: c?.kind }, { eventId: c?.event_id });
     return "Media attached";
   }, ["/events"]);

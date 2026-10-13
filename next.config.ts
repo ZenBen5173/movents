@@ -9,7 +9,8 @@ const csp = [
   "img-src 'self' data: blob: https:",
   "media-src 'self' data: blob:",
   "font-src 'self' data:",
-  `connect-src 'self'${dev ? " ws:" : ""}`,
+  // vercel.com/api/blob: Marketing page uploads go straight to the Blob store.
+  `connect-src 'self' https://vercel.com${dev ? " ws:" : ""}`,
   "frame-src 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",

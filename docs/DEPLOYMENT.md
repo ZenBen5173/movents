@@ -40,6 +40,7 @@ DATABASE_URL=... npm run purge-demo -- --yes # delete
 | `CRON_SECRET` | yes on Vercel | Protects `/api/cron/daily`; Vercel Cron sends it automatically |
 | Email provider | yes | One of: `RESEND_API_KEY` + `RESEND_FROM`, `SMTP_*`, or `GRAPH_*` (Outlook). Needed for sign-in links and invites |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | optional | "Continue with Google" |
+| `BLOB_READ_WRITE_TOKEN` | yes on Vercel | Private Vercel Blob store for poster and video uploads (`vercel blob create-store <name> --access private` connects it). Without it, media is kept in the database, which suits local development only |
 | `DATABASE_POOL_MAX` | optional | Connections per instance (default 3) |
 | `PLATFORM_ADMIN_EMAILS` | optional | Operators who may maintain any university's SOP, templates and supplier registry |
 | Integrations | optional | `LUMA_API_KEY`, `MEETUP_*`, `STRIPE_*`, `GOOGLE_*` (calendar), `GEMINI_API_KEY` (images) |

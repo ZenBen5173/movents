@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { one } from "@/lib/db";
 import { currentUser } from "@/lib/session";
 import { isMember } from "@/lib/members";
+import { getMedia } from "@/lib/storage";
 import { appUrl, fmtDate } from "@/lib/appurl";
 import type { Creative, EventRow, Venue } from "@/lib/types";
 
@@ -51,11 +52,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const download = url.searchParams.has("download");
   // Versioned URLs (?v=updated_at) never change content, so they can be cached hard.
   const cache = url.searchParams.has("v") && isPublic ? "public, max-age=31536000, immutable" : "private, max-age=60";
-  if (c.image_data) {
-    const [meta, b64] = c.image_data.split(",");
-    const mime = meta.slice(5, meta.indexOf(";"));
+  const media = (body: BodyInit, mime: string) => {
     const safe = /^(image\/(png|jpeg|gif|webp)|video\/(mp4|webm|quicktime))$/.test(mime) ? mime : "application/octet-stream";
-    return new NextResponse(new Uint8Array(Buffer.from(b64, "base64")), {
+    return new NextResponse(body, {
       headers: {
         "content-type": safe,
         "cache-control": cache,
@@ -64,6 +63,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         ...(download || safe === "application/octet-stream" ? { "content-disposition": `attachment; filename="${c.kind}.${safe.split("/")[1]}"` } : {}),
       },
     });
+  };
+  if (c.media_key) {
+    const blob = await getMedia(c.media_key);
+    if (!blob) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return media(blob.stream, c.media_type ?? blob.blob.contentType);
+  }
+  if (c.image_data) {
+    const [meta, b64] = c.image_data.split(",");
+    return media(new Uint8Array(Buffer.from(b64, "base64")), meta.slice(5, meta.indexOf(";")));
   }
 
   const ev = await one<EventRow & { society: string; uni: string }>("SELECT e.*, s.name AS society, u.short_name AS uni FROM events e JOIN societies s ON s.id = e.society_id JOIN universities u ON u.id = s.university_id WHERE e.id = $1", [c.event_id]);

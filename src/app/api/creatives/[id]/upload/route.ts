@@ -21,7 +21,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const signed = verifyToken(`upload:${id}`, new URL(req.url).searchParams.get("t"));
   const user = signed ? null : await currentUser();
   if (!signed && !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const c = await one<Creative>("SELECT * FROM creatives WHERE id = $1", [id]);
+  const c = await one<Pick<Creative, "id">>("SELECT id FROM creatives WHERE id = $1", [id]);
   if (!c) return NextResponse.json({ error: "Creative not found" }, { status: 404 });
   try {
     if (user) await assertMemberOf(user, "creatives", id);

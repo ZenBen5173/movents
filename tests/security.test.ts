@@ -35,6 +35,15 @@ test("media: real image types pass, SVG and HTML are refused", () => {
   assert.throws(() => toMedia(Buffer.from("<html><script>alert(1)</script></html>")), /Unsupported/);
 });
 
+test("browser uploads may only write to their own creative's folder", async () => {
+  const { uploadKeyOk } = await import("../src/lib/marketing");
+  assert.equal(uploadKeyOk("crv_a1", "creatives/crv_a1/1791899337018.png"), true);
+  assert.equal(uploadKeyOk("crv_a1", "creatives/crv_b2/1791899337018.png"), false);
+  assert.equal(uploadKeyOk("crv_a1", "creatives/crv_a1/../crv_b2/1791899337018.png"), false);
+  assert.equal(uploadKeyOk("crv_a1", "creatives/crv_a1/1791899337018.svg"), false);
+  assert.equal(uploadKeyOk("crv_a1", "creatives/crv_a1/evil.png"), false);
+});
+
 test("database errors are not shown to users; deliberate messages are", () => {
   const pg = Object.assign(new Error('relation "x" does not exist'), { severity: "ERROR", code: "42P01" });
   const orig = console.error;

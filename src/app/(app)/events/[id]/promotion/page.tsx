@@ -4,6 +4,7 @@ import { PromoChecklist } from "@/components/app/promo-checklist";
 import { MarketingKit } from "@/components/app/marketing-kit";
 import { imageHref, isVideo } from "@/lib/marketing";
 import { nanoBananaEnabled } from "@/lib/integrations/nanobanana";
+import { blobEnabled } from "@/lib/storage";
 import type { Creative } from "@/lib/types";
 import { canViewEvent } from "@/lib/guard";
 
@@ -17,7 +18,7 @@ export default async function PromotionPage({ params }: { params: Promise<{ id: 
   const items = await query<{ id: string; channel: string; title: string; due_date: string; status: string; link: string | null }>("SELECT * FROM promo_items WHERE event_id = $1 ORDER BY due_date", [id]);
   const creatives = (await query<Creative>(
     // Only the first bytes of image_data: enough to tell video from image without loading multi-MB posters.
-    "SELECT id, event_id, kind, channel, title, caption, hashtags, image_prompt, image_source, width, height, status, posted_url, image_url, created_at, updated_at, left(image_data, 32) AS image_data FROM creatives WHERE event_id = $1",
+    "SELECT id, event_id, kind, channel, title, caption, hashtags, image_prompt, image_source, width, height, status, posted_url, image_url, media_key, media_type, created_at, updated_at, left(image_data, 32) AS image_data FROM creatives WHERE event_id = $1",
     [id],
   )).sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
   return (
@@ -26,6 +27,7 @@ export default async function PromotionPage({ params }: { params: Promise<{ id: 
         <MarketingKit
           eventId={id}
           nano={nanoBananaEnabled()}
+          blob={blobEnabled()}
           items={creatives.map((c) => ({
             id: c.id,
             kind: c.kind,

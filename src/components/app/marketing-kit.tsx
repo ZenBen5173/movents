@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Check, Copy, Download, Film, ImagePlus, Link2, Send, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
-import { genKit, markCreativePosted, regenCreative, requestSocial, saveCreativeCopy, uploadCreative } from "@/app/actions";
+import { upload } from "@vercel/blob/client";
+import { finishCreativeUpload, genKit, markCreativePosted, regenCreative, requestSocial, saveCreativeCopy } from "@/app/actions";
 import { ActionButton } from "./action-button";
 import { Pill } from "./ui";
 import { cn } from "@/lib/utils";
@@ -45,9 +46,27 @@ function CopyBtn({ text, label = "Copy" }: { text: string; label?: string }) {
   );
 }
 
+const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "video/mp4": "mp4", "video/webm": "webm", "video/quicktime": "mov" };
+const MAX = { image: 8 * 1024 * 1024, video: 20 * 1024 * 1024 };
+
+/** Blob store connected: upload straight to it, then attach. Otherwise (local dev) POST the bytes to the app. */
+async function sendFile(creativeId: string, f: File, blob: boolean): Promise<{ ok: boolean; error?: string }> {
+  const ext = EXT[f.type];
+  if (!ext) return { ok: false, error: "Use PNG, JPEG, WebP, GIF, MP4, WebM or MOV." };
+  const max = f.type.startsWith("video/") ? MAX.video : MAX.image;
+  if (f.size > max) return { ok: false, error: `Max ${max / 1024 / 1024} MB for this file type.` };
+  if (blob) {
+    const key = `creatives/${creativeId}/${Date.now()}.${ext}`;
+    await upload(key, f, { access: "private", handleUploadUrl: `/api/creatives/${creativeId}/blob-upload`, contentType: f.type });
+    return finishCreativeUpload(creativeId, key);
+  }
+  const res = await fetch(`/api/creatives/${creativeId}/upload`, { method: "POST", body: f, headers: { "content-type": f.type } });
+  return res.ok ? { ok: true } : { ok: false, error: ((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Upload failed" };
+}
+
 const SOURCE: Record<string, string> = { template: "Branded template", "nano-banana": "Nano Banana", assistant: "AI assistant", upload: "Uploaded" };
 
-function KitCard({ c, index, nano }: { c: KitItem; index: number; nano: boolean }) {
+function KitCard({ c, index, nano, blob }: { c: KitItem; index: number; nano: boolean; blob: boolean }) {
   const [caption, setCaption] = useState(c.caption);
   const [tags, setTags] = useState(c.hashtags ?? "");
   const [postUrl, setPostUrl] = useState(c.posted_url ?? "");
@@ -111,17 +130,14 @@ function KitCard({ c, index, nano }: { c: KitItem; index: number; nano: boolean 
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
+              e.target.value = "";
               if (!f) return;
-              if (f.size > 25_000_000) return void toast.error("Max 25 MB");
-              const rd = new FileReader();
-              rd.onload = () =>
-                start(async () => {
-                  const r = await uploadCreative(c.id, String(rd.result));
-                  if (!r.ok) toast.error(r.error);
-                  else toast.success(r.message ?? "Uploaded");
-                  router.refresh();
-                });
-              rd.readAsDataURL(f);
+              start(async () => {
+                const r = await sendFile(c.id, f, blob).catch((err: unknown) => ({ ok: false, error: err instanceof Error ? err.message : "Upload failed" }));
+                if (!r.ok) toast.error(r.error ?? "Upload failed");
+                else toast.success("Media attached");
+                router.refresh();
+              });
             }}
           />
         </div>
@@ -136,7 +152,7 @@ function KitCard({ c, index, nano }: { c: KitItem; index: number; nano: boolean 
   );
 }
 
-export function MarketingKit({ eventId, items, nano }: { eventId: string; items: KitItem[]; nano: boolean }) {
+export function MarketingKit({ eventId, items, nano, blob }: { eventId: string; items: KitItem[]; nano: boolean; blob: boolean }) {
   const drafts = items.filter((i) => i.status === "draft").length;
   return (
     <div>
@@ -152,7 +168,7 @@ export function MarketingKit({ eventId, items, nano }: { eventId: string; items:
           <p className="text-sm text-muted-foreground">No creatives yet.</p>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {items.map((c, i) => <KitCard key={`${c.id}-${c.href}`} c={c} index={i} nano={nano} />)}
+            {items.map((c, i) => <KitCard key={`${c.id}-${c.href}`} c={c} index={i} nano={nano} blob={blob} />)}
           </div>
         )}
       </AnimatePresence>

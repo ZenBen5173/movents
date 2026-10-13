@@ -23,13 +23,13 @@ export function sniff(buf: Buffer) {
   return SIGNATURES.find((s) => s.test(buf))?.mime ?? null;
 }
 
-/** Validate bytes and return a data: URL for storage. */
+/** Validate bytes; returns the real type, the bytes and a data: URL. */
 export function toMedia(buf: Buffer) {
   const mime = sniff(buf);
   if (!mime) throw new Error("Unsupported file. Use PNG, JPEG, WebP, GIF, MP4, WebM or MOV.");
   const max = mime.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
   if (buf.length > max) throw new Error(`File too large (max ${Math.round(max / 1024 / 1024)} MB).`);
-  return { mime, dataUrl: `data:${mime};base64,${buf.toString("base64")}` };
+  return { mime, buf, dataUrl: `data:${mime};base64,${buf.toString("base64")}` };
 }
 
 /** Decode a data: URL and validate what is really inside it. */

@@ -308,6 +308,9 @@ export type Creative = {
   image_prompt: string | null;
   image_data: string | null;
   image_url: string | null;
+  /** Vercel Blob pathname (private store) when the media lives in Blob. */
+  media_key: string | null;
+  media_type: string | null;
   image_source: "template" | "nano-banana" | "assistant" | "upload";
   width: number;
   height: number;

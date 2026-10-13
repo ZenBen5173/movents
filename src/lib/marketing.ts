@@ -1,5 +1,6 @@
 import "server-only";
-import { fetchMedia, fromDataUrl } from "./media";
+import { MAX_IMAGE_BYTES, MAX_VIDEO_BYTES, fetchMedia, fromDataUrl, sniff } from "./media";
+import { blobEnabled, deleteMedia, inspectMedia, mediaKey, putMedia } from "./storage";
 import { id, insert, one, query, update } from "./db";
 import { appUrl, fmtDate } from "./appurl";
 import { generateImage, nanoBananaEnabled } from "./integrations/nanobanana";
@@ -139,11 +140,49 @@ export function needsImage(c: Pick<Creative, "kind" | "image_source" | "image_da
  * Attach media to a creative. Accepts a data: URL or a public https URL; the
  * bytes are checked (real PNG/JPEG/WebP/GIF/MP4/WebM/MOV, size-capped) and
  * stored, so the app never redirects to or embeds third-party URLs.
+ * Stored in the private Blob store when connected, else in the row.
  */
 export async function setImage(creativeId: string, image: string, source: Creative["image_source"]) {
   const media = image.startsWith("data:") ? fromDataUrl(image) : /^https:\/\//.test(image) ? await fetchMedia(image) : null;
   if (!media) throw new Error("Media must be an https URL or a base64 data: URL");
-  return update<Creative>("creatives", creativeId, { image_data: media.dataUrl, image_url: null, image_source: source, updated_at: new Date() });
+  const prev = await one<{ media_key: string | null }>("SELECT media_key FROM creatives WHERE id = $1", [creativeId]);
+  if (!prev) throw new Error("Creative not found");
+  let stored: { image_data: string | null; media_key: string | null } = { image_data: media.dataUrl, media_key: null };
+  if (blobEnabled()) {
+    const key = mediaKey(creativeId, media.mime);
+    await putMedia(key, media.buf, media.mime);
+    stored = { image_data: null, media_key: key };
+  }
+  const row = await update<Creative>("creatives", creativeId, { ...stored, media_type: media.mime, image_url: null, image_source: source, updated_at: new Date() });
+  await deleteMedia([prev.media_key]);
+  return row;
+}
+
+/** Blob pathnames a browser may upload to for this creative (see /api/creatives/[id]/blob-upload). */
+export function uploadKeyOk(creativeId: string, key: string) {
+  return key.startsWith(`creatives/${creativeId}/`) && /^creatives\/[\w-]+\/\d{10,16}\.(png|jpg|gif|webp|mp4|webm|mov)$/.test(key);
+}
+
+/**
+ * Attach a file the browser uploaded straight to Blob. The upload token
+ * already limited type and size; the bytes are checked again here, since
+ * the declared content type comes from the client.
+ */
+export async function attachUploadedMedia(creativeId: string, key: string) {
+  if (!blobEnabled() || !uploadKeyOk(creativeId, key)) throw new Error("Upload not recognised. Try again.");
+  const prev = await one<{ media_key: string | null }>("SELECT media_key FROM creatives WHERE id = $1", [creativeId]);
+  if (!prev) throw new Error("Creative not found");
+  const info = await inspectMedia(key);
+  if (!info) throw new Error("Upload not found. Try again.");
+  const mime = sniff(info.head);
+  const max = mime?.startsWith("video/") ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+  if (!mime || info.size > max) {
+    await deleteMedia([key]);
+    throw new Error(!mime ? "Unsupported file. Use PNG, JPEG, WebP, GIF, MP4, WebM or MOV." : `File too large (max ${Math.round(max / 1024 / 1024)} MB).`);
+  }
+  const row = await update<Creative>("creatives", creativeId, { media_key: key, media_type: mime, image_data: null, image_url: null, image_source: "upload", updated_at: new Date() });
+  if (prev.media_key !== key) await deleteMedia([prev.media_key]);
+  return row;
 }
 
 export async function regenerateImage(creativeId: string) {
@@ -158,6 +197,6 @@ export function imageHref(c: Pick<Creative, "id" | "updated_at">) {
   return `/api/creatives/${c.id}/image?v=${new Date(c.updated_at).getTime()}`;
 }
 
-export function isVideo(c: Pick<Creative, "image_data" | "image_url">) {
-  return Boolean(c.image_data?.startsWith("data:video/") || (c.image_url && /\.(mp4|webm|mov)(\?|$)/i.test(c.image_url)));
+export function isVideo(c: Pick<Creative, "image_data" | "image_url" | "media_type">) {
+  return Boolean(c.media_type?.startsWith("video/") || c.image_data?.startsWith("data:video/") || (c.image_url && /\.(mp4|webm|mov)(\?|$)/i.test(c.image_url)));
 }
