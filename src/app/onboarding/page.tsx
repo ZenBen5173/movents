@@ -47,9 +47,6 @@ export default async function Onboarding({ searchParams }: { searchParams: Promi
           <h2 className="text-sm font-semibold">Set up a new society</h2>
           <p className="mt-1 text-xs text-muted-foreground">You&apos;ll be its President and can invite your committee next.</p>
           <CreateSocietyForm universities={universities} />
-          <p className="mt-3 text-xs text-muted-foreground">
-            University not listed? Create the society under any university, then add yours from <b>Universities</b> with its event SOP.
-          </p>
         </section>
 
         <form action={signOut} className="mt-10">

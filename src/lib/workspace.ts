@@ -6,6 +6,7 @@ import { emailShell, sendSystemEmail } from "./integrations/email";
 import { hashToken, randomToken } from "./auth/tokens";
 import { EMAIL_RE, normaliseEmail } from "./auth/accounts";
 import { isFinal } from "./rbac";
+import { SUNWAY_SOP } from "./sop-default";
 import { ROLE_LABEL, type Role, type User } from "./types";
 
 export const ROLES: Role[] = ["president", "vp", "director", "committee", "faculty_advisor"];
@@ -39,14 +40,27 @@ async function resyncActive(userId: string) {
   await query("UPDATE users SET society_id = NULL, role = 'committee', department = NULL WHERE id = $1", [userId]);
 }
 
-/** A new society, with its creator as President. */
-export async function createSociety(user: User, input: { name: string; universityId: string }) {
+/**
+ * A new society, with its creator as President. With `newUniversity` the
+ * university is created too, starting from the template SOP (the President
+ * uploads the real one afterwards).
+ */
+export async function createSociety(user: User, input: { name: string; universityId: string; newUniversity?: { name: string; short: string } }) {
   const name = input.name.trim();
   if (name.length < 2 || name.length > 120) throw new Error("Give your society a name (2 to 120 characters).");
-  const uni = await one<{ id: string }>("SELECT id FROM universities WHERE id = $1", [input.universityId]);
-  if (!uni) throw new Error("Pick your university.");
   const sid = id("soc");
   await transaction(async () => {
+    let uniId = input.universityId;
+    if (input.newUniversity) {
+      const uName = input.newUniversity.name.trim().slice(0, 160);
+      const uShort = (input.newUniversity.short.trim() || uName).slice(0, 40);
+      if (uName.length < 3) throw new Error("Enter your university's name.");
+      const existing = await one<{ id: string }>("SELECT id FROM universities WHERE lower(name) = lower($1)", [uName]);
+      uniId = existing?.id ?? `uni_${uShort.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 20) || "u"}_${id("x").slice(2, 8)}`;
+      if (!existing) await query("INSERT INTO universities (id, name, short_name, sop, created_by_society) VALUES ($1, $2, $3, $4, $5)", [uniId, uName, uShort, JSON.stringify({ ...SUNWAY_SOP, version: "template" }), sid]);
+    }
+    const uni = await one<{ id: string }>("SELECT id FROM universities WHERE id = $1", [uniId]);
+    if (!uni) throw new Error("Pick your university.");
     await query("INSERT INTO societies (id, university_id, name, created_by) VALUES ($1, $2, $3, $4)", [sid, uni.id, name, user.id]);
     await query("INSERT INTO memberships (society_id, user_id, role, department) VALUES ($1, $2, 'president', 'Executive')", [sid, user.id]);
     await switchWorkspace(user.id, sid);

@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, FileText, Landmark, Users } from "lucide-react";
+import { Building2, FileText, Landmark } from "lucide-react";
 import { toast } from "sonner";
 import AnimatedStepper from "@/components/smoothui/animated-stepper";
 import { Dropzone, DropzoneContent, DropzoneEmptyState } from "@/components/kibo-ui/dropzone";
@@ -40,7 +40,7 @@ const SAMPLE = `# Event SOP, version 1.0
 
 export function OnboardWizard() {
   const [step, setStep] = useState(0);
-  const [f, setF] = useState({ name: "", short_name: "", society: "", sopText: "", president: { name: "", email: "" }, advisor: { name: "", email: "" } });
+  const [f, setF] = useState({ name: "", short_name: "", sopText: "" });
   const [venues, setVenues] = useState([{ name: "Main Hall", capacity: 300, booking_lead_weeks: 4 }, { name: "Lecture Theatre A", capacity: 150, booking_lead_weeks: 2 }]);
   const [files, setFiles] = useState<File[] | undefined>();
   const [pending, start] = useTransition();
@@ -50,13 +50,12 @@ export function OnboardWizard() {
   const steps = [
     {
       label: "University",
-      description: "Name and society",
+      description: "Name",
       icon: <Landmark className="size-4" />,
       content: (
         <div className="grid gap-3 sm:grid-cols-2">
           <input placeholder="University name, e.g. Taylor's University" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className={`${input} sm:col-span-2`} />
           <input placeholder="Short name, e.g. Taylor's" value={f.short_name} onChange={(e) => setF({ ...f, short_name: e.target.value })} className={input} />
-          <input placeholder="First society, e.g. Taylor's AI Club" value={f.society} onChange={(e) => setF({ ...f, society: e.target.value })} className={input} />
         </div>
       ),
     },
@@ -95,19 +94,6 @@ export function OnboardWizard() {
         </div>
       ),
     },
-    {
-      label: "People",
-      description: "President & advisor",
-      icon: <Users className="size-4" />,
-      content: (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <input placeholder="President name" value={f.president.name} onChange={(e) => setF({ ...f, president: { ...f.president, name: e.target.value } })} className={input} />
-          <input placeholder="President email" type="email" value={f.president.email} onChange={(e) => setF({ ...f, president: { ...f.president, email: e.target.value } })} className={input} />
-          <input placeholder="Faculty advisor name" value={f.advisor.name} onChange={(e) => setF({ ...f, advisor: { ...f.advisor, name: e.target.value } })} className={input} />
-          <input placeholder="Faculty advisor email" type="email" value={f.advisor.email} onChange={(e) => setF({ ...f, advisor: { ...f.advisor, email: e.target.value } })} className={input} />
-        </div>
-      ),
-    },
   ];
 
   const canNext = step === 0 ? f.name.trim() && f.short_name.trim() : true;
@@ -125,7 +111,7 @@ export function OnboardWizard() {
               start(async () => {
                 const r = await onboardUniversity({ ...f, venues });
                 if (!r.ok) return void toast.error(r.error);
-                toast.success(r.message ?? "Onboarded");
+                toast.success(r.message ?? "University added");
                 router.push(`/universities/${(r.data as { id: string }).id}`);
               })
             }

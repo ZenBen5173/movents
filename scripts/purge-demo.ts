@@ -1,12 +1,15 @@
-// Remove the hackathon demo data (demo societies, their people and events,
-// fake venue bookings) from a database. Reference data (universities, SOPs,
-// venues, supplier registry) and every real society are kept.
+// Remove the hackathon demo data from a database: demo societies, their
+// people and events, invented venue bookings, and the five sample
+// universities (invented SOP rules, contacts and vendors) unless a real
+// society has joined one. Sunway's reference data and every real society
+// are kept.
 //
 //   npm run purge-demo            # dry run: shows what would be deleted
 //   npm run purge-demo -- --yes   # delete
 import { query, transaction } from "../src/lib/db";
 
-const DEMO_SOCIETIES = ["soc_aitech", "soc_robotics"];
+const DEMO_UNIS = ["uni_taylors", "uni_monash", "uni_um", "uni_apu", "uni_ucsi"];
+const DEMO_SOCIETIES = ["soc_aitech", "soc_robotics", ...DEMO_UNIS.map((u) => `soc_${u.slice(4)}`)];
 const yes = process.argv.includes("--yes");
 
 const EVENT_TABLES = [
@@ -26,9 +29,16 @@ const users = (
   )
 ).map((r) => r.id);
 const bookings = await query<{ n: number }>("SELECT count(*)::int AS n FROM venue_bookings");
+// Sample universities go only if no real society uses them.
+const unis = (
+  await query<{ id: string }>(
+    "SELECT u.id FROM universities u WHERE u.id = ANY($1::text[]) AND NOT EXISTS (SELECT 1 FROM societies s WHERE s.university_id = u.id AND NOT (s.id = ANY($2::text[])))",
+    [DEMO_UNIS, DEMO_SOCIETIES],
+  )
+).map((r) => r.id);
 
 console.log(`Demo societies: ${DEMO_SOCIETIES.join(", ")}`);
-console.log(`Events: ${events.length}, people: ${users.length}, venue calendar entries: ${bookings[0].n}`);
+console.log(`Events: ${events.length}, people: ${users.length}, venue calendar entries: ${bookings[0].n}, sample universities: ${unis.length}`);
 if (!yes) {
   console.log("Dry run. Re-run with --yes to delete.");
   process.exit(0);
@@ -49,6 +59,10 @@ await transaction(async () => {
   // The seeded venue calendar was invented classes and club bookings.
   await query("DELETE FROM venue_bookings");
   await query("DELETE FROM sop_documents WHERE source_event_id = ANY($1::text[]) OR id = 'sop_lessons_ds'", [events]);
+  await query("DELETE FROM vendors WHERE event_id IS NULL AND university_id = ANY($1::text[])", [unis]);
+  await query("DELETE FROM venues WHERE university_id = ANY($1::text[])", [unis]);
+  await query("DELETE FROM sop_documents WHERE university_id = ANY($1::text[])", [unis]);
+  await query("DELETE FROM universities WHERE id = ANY($1::text[])", [unis]);
 });
 console.log("Demo data removed.");
 process.exit(0);

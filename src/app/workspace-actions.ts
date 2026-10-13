@@ -30,7 +30,12 @@ export async function createSocietyAction(_prev: Res | null, form: FormData): Pr
   const user = await signedIn();
   const r = await run(async () => {
     await rateLimit(`society:create:${user.id}`, 5, 86400);
-    await W.createSociety(user, { name: String(form.get("name") ?? ""), universityId: String(form.get("university") ?? "") });
+    const uni = String(form.get("university") ?? "");
+    await W.createSociety(user, {
+      name: String(form.get("name") ?? ""),
+      universityId: uni,
+      newUniversity: uni === "__new" ? { name: String(form.get("uni_name") ?? ""), short: String(form.get("uni_short") ?? "") } : undefined,
+    });
   });
   if (r.ok) redirect("/");
   return r;
