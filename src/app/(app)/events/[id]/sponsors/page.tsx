@@ -1,10 +1,10 @@
 import { query } from "@/lib/db";
-import { requireUser } from "@/lib/session";
 import { decide } from "@/lib/rbac";
 import { offerLabel, sponsorContext, sponsorDraft } from "@/lib/sponsors";
 import { Card } from "@/components/app/ui";
 import { SponsorOverview, SponsorPipeline, type SponsorRow } from "@/components/app/sponsor-board";
 import type { Sponsor } from "@/lib/types";
+import { canViewEvent, pageUser } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,8 @@ const iso = (v: unknown) => (v == null ? null : v instanceof Date ? v.toISOStrin
 /** Funnel donut + offers on top, the outreach pipeline underneath. */
 export default async function SponsorsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const user = await requireUser();
+  if (!(await canViewEvent(id))) return null;
+  const user = await pageUser();
   const [sponsors, pending, ctx] = await Promise.all([
     query<Sponsor>("SELECT * FROM sponsors WHERE event_id = $1 ORDER BY created_at", [id]),
     query<{ sid: string | null }>("SELECT payload->>'sponsor_id' AS sid FROM approval_requests WHERE event_id = $1 AND action_type = 'email.sponsor' AND status = 'pending'", [id]),

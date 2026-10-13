@@ -1,3 +1,4 @@
+import { pageUser } from "@/lib/guard";
 import Link from "next/link";
 import { ScanLine } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -18,7 +19,7 @@ export default async function EventLayout({ children, params }: { children: Reac
   const { id } = await params;
   const ev = await one<EventRow & { owner: string | null }>("SELECT e.*, u.name AS owner FROM events e LEFT JOIN users u ON u.id = e.created_by WHERE e.id = $1", [id]);
   if (!ev) notFound();
-  const user = (await currentUser())!;
+  const user = await pageUser();
   if (!(await isMember(user, id))) {
     return (
       <div className="pt-10">
@@ -28,7 +29,7 @@ export default async function EventLayout({ children, params }: { children: Reac
   }
   const [team, people] = await Promise.all([
     listMembers(id),
-    query<{ id: string; name: string; role: Role; department: string | null }>("SELECT id, name, role, department FROM users WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [ev.society_id]),
+    query<{ id: string; name: string; role: Role; department: string | null }>("SELECT id, name, role, department FROM society_members WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [ev.society_id]),
   ]);
   const guests = (await one<{ going: number; inn: number }>("SELECT count(*) FILTER (WHERE status = 'going')::int AS going, count(*) FILTER (WHERE checked_in)::int AS inn FROM rsvps WHERE event_id = $1", [id])) ?? { going: 0, inn: 0 };
   const leadId = team.find((m) => m.member_role === "lead")?.user_id ?? ev.created_by ?? null;

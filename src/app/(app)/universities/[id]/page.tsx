@@ -1,3 +1,4 @@
+import { pageUser } from "@/lib/guard";
 import { currentUser } from "@/lib/session";
 import { one, query } from "@/lib/db";
 import { canManageSop } from "@/lib/rbac";
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function UniversitySop({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const user = (await currentUser())!;
+  const user = await pageUser();
   const uni = (await one<University>("SELECT * FROM universities WHERE id = $1", [id]))!;
   const docs = await query<{ id: string; title: string; kind: string; content: string; created_at: string; by: string | null }>(
     "SELECT d.*, u.name AS by FROM sop_documents d LEFT JOIN users u ON u.id = d.uploaded_by WHERE d.university_id = $1 ORDER BY d.created_at DESC",

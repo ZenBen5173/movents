@@ -1,6 +1,7 @@
 import { query } from "@/lib/db";
 import { appUrl } from "@/lib/appurl";
 import { FileBrowser, type FolderNode } from "@/components/app/file-browser";
+import { canViewEvent } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,7 @@ const KIND_LABEL: Record<string, string> = { poster: "Poster", ig_post: "Instagr
 
 export default async function EventFiles({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await canViewEvent(id))) return null;
   const [report, fb, speakers, vendors, creatives] = await Promise.all([
     query("SELECT 1 FROM agent_runs WHERE event_id = $1 AND kind = 'report' LIMIT 1", [id]),
     query("SELECT 1 FROM feedback WHERE event_id = $1 LIMIT 1", [id]),

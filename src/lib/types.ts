@@ -16,7 +16,8 @@ export type User = {
   role: Role;
   department: string | null;
   phone: string | null;
-  api_key: string | null;
+  email_verified_at?: string | null;
+  avatar_url?: string | null;
 };
 
 export type LeadTime = {

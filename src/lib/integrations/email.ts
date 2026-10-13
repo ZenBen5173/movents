@@ -64,6 +64,22 @@ export async function sendEmail(input: {
   }
 }
 
+/**
+ * Account emails (sign-in links, invites). Sent straight to the recipient,
+ * never stored in the outbox and never redirected, because they carry
+ * credentials. Without a provider the link is printed to the server log in
+ * development and refused in production.
+ */
+export async function sendSystemEmail(to: string, subject: string, html: string, devLink?: string) {
+  const provider = emailProvider();
+  if (provider === "outbox") {
+    if (process.env.NODE_ENV === "production") throw new Error("Email is not configured on this server. Ask the administrator to set up an email provider.");
+    console.info(`[email:dev] To ${to}: ${subject}${devLink ? `\n  ${devLink}` : ""}`);
+    return;
+  }
+  await deliver(provider, to, subject, html);
+}
+
 async function deliver(provider: EmailProvider, to: string, subject: string, html: string): Promise<string | null> {
   switch (provider) {
     case "graph":

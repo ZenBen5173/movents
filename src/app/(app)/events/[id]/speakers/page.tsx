@@ -7,6 +7,7 @@ import { Pass, Stamp } from "@/components/ep/kit";
 import { DocModal } from "@/components/app/doc-modal";
 import { findMoreSpeakers, speakerAction } from "@/app/actions";
 import type { Speaker } from "@/lib/types";
+import { canViewEvent } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ const initials = (n: string) => n.replace(/^Dr\.?\s+/, "").split(/\s+/).slice(0,
 
 export default async function SpeakersPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await canViewEvent(id))) return null;
   const b = (await loadBundle(id))!;
   return (
     <Card title="Speakers" actions={<ActionButton action={findMoreSpeakers.bind(null, id)} size="xs" icon={<Search className="size-3.5" />}>Find more</ActionButton>}>

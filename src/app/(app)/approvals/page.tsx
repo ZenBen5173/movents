@@ -1,3 +1,4 @@
+import { pageUser } from "@/lib/guard";
 import { currentUser } from "@/lib/session";
 import { query } from "@/lib/db";
 import { canDecide } from "@/lib/rbac";
@@ -20,7 +21,7 @@ const BANDS: { role: Role; who: string; can: string }[] = [
 type Row = ApprovalRequest & { requester: string | null; decider: string | null; event_title: string | null; vendor_name: string | null; speaker_name: string | null; reason: string | null };
 
 export default async function BackstagePage() {
-  const user = (await currentUser())!;
+  const user = await pageUser();
   const rows = await query<Row>(
     `SELECT a.*, u.name AS requester, d.name AS decider, e.title AS event_title, v.name AS vendor_name, s.name AS speaker_name,
        (SELECT l.details->>'reason' FROM audit_logs l WHERE l.action = 'approval.requested' AND l.details->>'approval_id' = a.id ORDER BY l.created_at LIMIT 1) AS reason

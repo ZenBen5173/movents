@@ -213,7 +213,7 @@ export async function ensureSponsorDemo(eventId: string) {
     { company: "Pena Books", industry: "Retail", website: "https://penabooks.example", contact_email: "events@penabooks.example", ask: "Book prizes", fit_reason: "Prizes for best questions", status: "found" },
   ];
   const ctx = await sponsorContext(eventId, { name: "Programmes Director" });
-  const sender = await one<{ id: string; name: string }>("SELECT id, name FROM users WHERE society_id = $1 AND role = 'director' ORDER BY name LIMIT 1", [ev.society_id]);
+  const sender = await one<{ id: string; name: string }>("SELECT id, name FROM society_members WHERE society_id = $1 AND role = 'director' ORDER BY name LIMIT 1", [ev.society_id]);
   if (sender) ctx.sender = sender;
   for (const s of seeds) {
     const row = await insert<Sponsor>("sponsors", {

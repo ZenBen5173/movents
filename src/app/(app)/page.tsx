@@ -1,3 +1,4 @@
+import { pageUser } from "@/lib/guard";
 import { currentUser } from "@/lib/session";
 import { query } from "@/lib/db";
 import { daysBetween, today } from "@/lib/appurl";
@@ -7,7 +8,7 @@ import { visibleSql } from "@/lib/members";
 export const dynamic = "force-dynamic";
 
 export default async function BoxOffice() {
-  const user = (await currentUser())!;
+  const user = await pageUser();
   const now = today();
   const projects = await query<{
     id: string;

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { id, insert, one, query, update } from "@/lib/db";
+import { id, insert, one, query, transaction, update } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { addMembers, assertMember, assertMemberOf, isMember, removeMember, seesAll } from "@/lib/members";
 import { audit } from "@/lib/audit";
@@ -123,8 +123,10 @@ export async function setEventMember(eventId: string, userId: string, on: boolea
   return wrap(async () => {
     const user = await requireUser();
     if (!(await isMember(user, eventId))) throw new Error("Only people on this event can change its team");
-    const target = await one<User>("SELECT * FROM users WHERE id = $1", [userId]);
-    if (!target || target.society_id !== user.society_id) throw new Error("Person not found");
+    const lead = await one<{ user_id: string }>("SELECT user_id FROM event_members WHERE event_id = $1 AND role IN ('lead','colead') AND user_id = $2", [eventId, user.id]);
+    if (!lead && !seesAll(user) && userId !== user.id) throw new Error("Only the event lead can change the team");
+    const target = await one<User>("SELECT * FROM society_members WHERE id = $1 AND society_id = $2", [userId, user.society_id]);
+    if (!target) throw new Error("Person not found");
     if (on) await addMembers(eventId, [userId], user.id);
     else {
       const lead = await one<{ user_id: string }>("SELECT user_id FROM event_members WHERE event_id = $1 AND role = 'lead'", [eventId]);
@@ -347,11 +349,11 @@ export async function pushCal(eventId: string) {
   }, ["/events"]);
 }
 
-export async function runSchedulerNow(todayOverride?: string) {
+export async function runSchedulerNow() {
   return wrap(async () => {
     const user = await requireUser();
     if (!isFinal(user)) throw new Error("Only the President/VP can run the scheduler manually");
-    const r = await runScheduler({ todayOverride });
+    const r = await runScheduler({ societyId: user.society_id });
     await audit(user, "scheduler.run", { actions: r.actions.length, today: r.today });
     return { message: r.actions.length ? r.actions.join(" · ") : "Nothing due today", data: r };
   }, ["/"]);
@@ -431,66 +433,33 @@ export async function onboardUniversity(data: {
   name: string;
   short_name: string;
   sopText: string;
-  society: string;
-  president: { name: string; email: string };
-  advisor: { name: string; email: string };
   venues: { name: string; capacity: number; booking_lead_weeks: number }[];
 }) {
   return wrap(async () => {
     const user = await requireUser();
-    if (!isFinal(user)) throw new Error("Only a President/VP can onboard a university");
-    if (!data.name.trim() || !data.short_name.trim()) throw new Error("University name and short name are required");
-    const uid = `uni_${data.short_name.toLowerCase().replace(/[^a-z0-9]+/g, "")}_${Math.random().toString(36).slice(2, 6)}`;
-    const parsed = parseSopText(data.sopText || "", { ...SUNWAY_SOP, version: "1.0" });
-    await insert("universities", { id: uid, name: data.name.trim(), short_name: data.short_name.trim(), sop: parsed.sop });
-    if (data.sopText.trim()) await insert("sop_documents", { id: id("sop"), university_id: uid, title: `${data.short_name} event SOP`, kind: "sop", content: data.sopText, uploaded_by: user.id });
-    const sid = id("soc");
-    await insert("societies", { id: sid, university_id: uid, name: data.society || `${data.short_name} Student Society` });
-    const mk = (u: { name: string; email: string }, role: string) =>
-      u.name && u.email ? insert("users", { id: id("usr"), society_id: sid, name: u.name, email: u.email, role, department: role === "president" ? "Executive" : null, api_key: `ep_${crypto.randomUUID().replace(/-/g, "")}` }) : null;
-    await mk(data.president, "president");
-    await mk(data.advisor, "faculty_advisor");
-    for (const v of data.venues.filter((x) => x.name)) {
-      await insert("venues", { id: id("ven"), university_id: uid, name: v.name, capacity: v.capacity || 100, setup_styles: ["theatre"], av: ["projector"], cost: 0, booking_lead_weeks: v.booking_lead_weeks || 2 });
-    }
-    await audit(user, "university.onboarded", { university: data.name, sections: parsed.found.sections, lead_times: parsed.found.leadTimes });
-    return { message: `${data.name} onboarded`, data: { id: uid } };
+    if (!isFinal(user)) throw new Error("Only a President/VP can add a university");
+    const name = String(data.name ?? "").trim().slice(0, 160);
+    const short = String(data.short_name ?? "").trim().slice(0, 40);
+    if (!name || !short) throw new Error("University name and short name are required");
+    const uid = `uni_${short.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 20)}_${crypto.randomUUID().slice(0, 6)}`;
+    const sopText = String(data.sopText ?? "").slice(0, 200_000);
+    const parsed = parseSopText(sopText, { ...SUNWAY_SOP, version: "1.0" });
+    await transaction(async () => {
+      await insert("universities", { id: uid, name, short_name: short, sop: parsed.sop, created_by_society: user.society_id });
+      if (sopText.trim()) await insert("sop_documents", { id: id("sop"), university_id: uid, title: `${short} event SOP`, kind: "sop", content: sopText, uploaded_by: user.id });
+      for (const v of (Array.isArray(data.venues) ? data.venues : []).filter((x) => x?.name).slice(0, 100)) {
+        await insert("venues", { id: id("ven"), university_id: uid, name: String(v.name).slice(0, 120), capacity: Number(v.capacity) || 100, setup_styles: ["theatre"], av: ["projector"], cost: 0, booking_lead_weeks: Number(v.booking_lead_weeks) || 2 });
+      }
+    });
+    await audit(user, "university.onboarded", { university: name, sections: parsed.found.sections, lead_times: parsed.found.leadTimes });
+    return { message: `${name} added`, data: { id: uid } };
   }, ["/universities", "/sop"]);
 }
 
 export async function markNotificationsRead() {
   return wrap(async () => {
-    const u: User = await requireUser();
-    await query("UPDATE notifications SET read = true WHERE user_id = $1 OR role = $2", [u.id, u.role]);
-  }, ["/"]);
-}
-
-export async function rotateApiKey() {
-  return wrap(async () => {
     const u = await requireUser();
-    const key = `ep_${crypto.randomUUID().replace(/-/g, "")}`;
-    await update("users", u.id, { api_key: key });
-    await audit(u, "api_key.rotated", {});
-    return "New API key generated";
-  }, ["/settings"]);
-}
-
-export async function getApproval(approvalId: string) {
-  return one<ApprovalRequest>("SELECT * FROM approval_requests WHERE id = $1", [approvalId]);
-}
-
-export async function resetDemo() {
-  return wrap(async () => {
-    const user = await requireUser();
-    if (!isFinal(user)) throw new Error("Only the President/VP can reset demo data");
-    const { seed } = await import("@/lib/seed");
-    const tables = ["universities", "sop_documents", "societies", "users", "venues", "events", "tasks", "speakers", "vendors", "budget_lines", "risks", "approval_requests", "audit_logs", "agent_runs", "emails", "calendar_events", "rsvps", "feedback", "promo_items", "reminders", "runsheet_items", "volunteers", "payments", "notifications", "creatives"];
-    for (const t of tables) await query(`DELETE FROM ${t}`);
-    await seed((sql, params) => query(sql, params));
-    const { ensureDemo, resetDemoState } = await import("@/lib/demo");
-    resetDemoState();
-    await ensureDemo();
-    return "Demo data reset";
+    await query("UPDATE notifications SET read = true WHERE user_id = $1 OR (role = $2 AND society_id = $3)", [u.id, u.role, u.society_id]);
   }, ["/"]);
 }
 

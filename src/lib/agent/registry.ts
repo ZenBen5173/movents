@@ -104,7 +104,7 @@ const ALL_TOOLS: Tool[] = [
     run: async (a, user) => {
       const brief = String(a.brief);
       const p = parsePrompt(brief, today());
-      const people = await query<{ name: string; department: string | null }>("SELECT name, department FROM users WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]);
+      const people = await query<{ name: string; department: string | null }>("SELECT name, department FROM society_members WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]);
       const questions: string[] = [];
       if (p.missing.includes("date")) questions.push("What date (and time) is the event?");
       if (p.missing.includes("pax")) questions.push("Roughly how many people are you expecting?");
@@ -124,7 +124,7 @@ const ALL_TOOLS: Tool[] = [
     name: "list_society_members",
     description: "People in the caller's society (name, role, department, email). Use to pick an event team.",
     inputSchema: { type: "object", properties: {} },
-    run: async (_, user) => query("SELECT name, role, department, email FROM users WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]),
+    run: async (_, user) => query("SELECT name, role, department, email FROM society_members WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]),
   },
   {
     name: "list_my_events",

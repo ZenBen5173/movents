@@ -21,7 +21,7 @@ export async function loadBundle(eventId: string) {
     query<Vendor>("SELECT * FROM vendors WHERE event_id = $1 ORDER BY category, unit_price", [eventId]),
     query<BudgetLine>("SELECT * FROM budget_lines WHERE event_id = $1 ORDER BY sort", [eventId]),
     query<Risk>("SELECT * FROM risks WHERE event_id = $1 ORDER BY likelihood * impact DESC", [eventId]),
-    query<User>("SELECT * FROM users WHERE society_id = $1", [event.society_id]),
+    query<User>("SELECT * FROM society_members WHERE society_id = $1", [event.society_id]),
     query<{ start_time: string; end_time: string; activity: string; owner: string; location: string; notes: string }>("SELECT * FROM runsheet_items WHERE event_id = $1 ORDER BY start_time", [eventId]),
     query<{ channel: string; title: string; due_date: string; status: string }>("SELECT * FROM promo_items WHERE event_id = $1 ORDER BY due_date", [eventId]),
     query<Rsvp>("SELECT * FROM rsvps WHERE event_id = $1", [eventId]),

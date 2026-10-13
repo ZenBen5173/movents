@@ -16,18 +16,22 @@ async function sendToAttendees(ev: EventRow, kind: string, subject: string, html
   if (!rsvps.length) return { sent: 0, mode: "none" };
   const digest = Boolean(process.env.EMAIL_REDIRECT_TO) || emailProvider() === "outbox";
   if (digest) {
-    const pres = await one<User>("SELECT * FROM users WHERE society_id = $1 AND role = 'president'", [ev.society_id]);
-    await sendEmail({ to: pres?.email ?? "organiser@movents.test", subject: `[to ${rsvps.length} attendees] ${subject}`, html, kind, eventId: ev.id, sentBy: "scheduler" });
+    const pres = await one<User>("SELECT u.* FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.society_id = $1 AND m.role = 'president' LIMIT 1", [ev.society_id]);
+    if (!pres) return { sent: 0, mode: "none" };
+    await sendEmail({ to: pres.email, subject: `[to ${rsvps.length} attendees] ${subject}`, html, kind, eventId: ev.id, sentBy: "scheduler" });
     return { sent: rsvps.length, mode: "digest" };
   }
   for (const r of rsvps) await sendEmail({ to: r.email, subject, html, kind, eventId: ev.id, relatedId: r.id, sentBy: "scheduler" });
   return { sent: rsvps.length, mode: "individual" };
 }
 
-export async function runScheduler(opts: { todayOverride?: string } = {}) {
-  const now = opts.todayOverride ?? today();
+/** Daily automations. `societyId` limits a manual run to one society; the cron runs them all. */
+export async function runScheduler(opts: { todayOverride?: string; societyId?: string } = {}) {
+  const now = (process.env.NODE_ENV !== "production" && opts.todayOverride) || today();
   const log: string[] = [];
-  const events = await query<EventRow>("SELECT * FROM events WHERE status <> 'completed'");
+  const events = opts.societyId
+    ? await query<EventRow>("SELECT * FROM events WHERE status <> 'completed' AND society_id = $1", [opts.societyId])
+    : await query<EventRow>("SELECT * FROM events WHERE status <> 'completed'");
 
   for (const ev of events) {
     const uni = await one<University & { society_name: string }>("SELECT u.*, s.name AS society_name FROM societies s JOIN universities u ON u.id = s.university_id WHERE s.id = $1", [ev.society_id]);
@@ -40,7 +44,7 @@ export async function runScheduler(opts: { todayOverride?: string } = {}) {
     for (const sp of speakers) {
       const age = daysBetween(new Date(sp.contacted_at!).toISOString().slice(0, 10), now);
       if (age < followDays) continue;
-      const sender = (await one<User>("SELECT * FROM users WHERE society_id = $1 AND role = 'director' AND department = 'Programmes'", [ev.society_id])) ?? ({ name: "The organising committee", role: "director" } as User);
+      const sender = (await one<User>("SELECT * FROM society_members WHERE society_id = $1 AND role = 'director' AND department = 'Programmes'", [ev.society_id])) ?? ({ name: "The organising committee", role: "director" } as User);
       const { subject, html } = speakerEmail(sp, ev, venue, uni?.society_name ?? "", sender, true);
       const e = await sendEmail({ to: sp.email ?? `${sp.name.toLowerCase().replace(/[^a-z]+/g, ".")}@speaker.invalid`, subject, html, kind: "speaker_followup", eventId: ev.id, relatedId: sp.id, sentBy: "scheduler" });
       await update("speakers", sp.id, { status: "followed_up", followed_up_at: new Date() });
@@ -83,7 +87,7 @@ export async function runScheduler(opts: { todayOverride?: string } = {}) {
     if (approved > 0 && spent >= approved * (pct / 100) && !ev.flags.some((f) => f.message.startsWith("Spend alert"))) {
       const msg = `Spend alert: ${fmtRM(spent)} is ${Math.round((spent / approved) * 100)}% of the approved ${fmtRM(approved)}.`;
       await update("events", ev.id, { flags: [...ev.flags, { level: "warn", message: msg }] });
-      await notify({ role: "president" }, `Budget ${pct}% alert, ${ev.title}`, msg, `/events/${ev.id}`);
+      await notify({ role: "president", societyId: ev.society_id }, `Budget ${pct}% alert, ${ev.title}`, msg, `/events/${ev.id}`);
       await audit(SYSTEM, "budget.alert", { spent, approved, pct }, { eventId: ev.id });
       log.push(msg);
     }

@@ -1,3 +1,4 @@
+import { pageUser } from "@/lib/guard";
 import Link from "next/link";
 import { query } from "@/lib/db";
 import { today } from "@/lib/appurl";
@@ -16,7 +17,7 @@ const ago = (iso: string) => {
 };
 
 export default async function NewEvent() {
-  const user = (await currentUser())!;
+  const user = await pageUser();
   const [runs, people] = await Promise.all([
     query<AgentRun & { by: string }>(
       `SELECT r.*, u.name AS by FROM agent_runs r LEFT JOIN users u ON u.id = r.started_by
@@ -24,7 +25,7 @@ export default async function NewEvent() {
        ORDER BY r.created_at DESC LIMIT 20`,
       [user.id],
     ),
-    query<{ id: string; name: string; role: Role; department: string | null }>("SELECT id, name, role, department FROM users WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]),
+    query<{ id: string; name: string; role: Role; department: string | null }>("SELECT id, name, role, department FROM society_members WHERE society_id = $1 AND role <> 'faculty_advisor' ORDER BY name", [user.society_id]),
   ]);
   return (
     <div className="grid gap-10 pt-6 lg:grid-cols-[1fr_260px]">

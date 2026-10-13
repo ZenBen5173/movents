@@ -60,7 +60,7 @@ export async function gate(
     await update("vendors", String(payload.vendor_id), { deposit_status: "pending_approval" });
   }
   await notify(
-    { role: d.approver_role },
+    { role: d.approver_role, societyId: user.society_id! },
     `Approval needed: ${ACTION_LABEL[action]}`,
     `${user.name} requested: ${title}${d.approver_department ? ` (${d.approver_department})` : ""}`,
     `/approvals#${approval.id}`,
@@ -78,8 +78,9 @@ export async function gate(
 async function notifyApproverByEmail(role: string, dept: string | null, approval: ApprovalRequest, requester: User) {
   if (process.env.NOTIFY_APPROVERS_BY_EMAIL !== "1") return;
   const approvers = await query<User>(
-    `SELECT * FROM users WHERE role = $1 ${dept ? "AND department = $2" : ""}`,
-    dept ? [role, dept] : [role],
+    `SELECT u.* FROM memberships m JOIN users u ON u.id = m.user_id
+     WHERE m.society_id = $1 AND m.role = $2 ${dept ? "AND m.department = $3" : ""}`,
+    dept ? [requester.society_id, role, dept] : [requester.society_id, role],
   );
   for (const a of approvers) {
     await sendEmail({
@@ -113,7 +114,11 @@ function summarise(p: Payload) {
 }
 
 export async function decideApproval(user: User, approvalId: string, decision: "approve" | "reject", note?: string) {
-  const req = await one<ApprovalRequest>("SELECT * FROM approval_requests WHERE id = $1", [approvalId]);
+  const req = await one<ApprovalRequest>(
+    `SELECT a.* FROM approval_requests a LEFT JOIN events e ON e.id = a.event_id LEFT JOIN users r ON r.id = a.requested_by
+     WHERE a.id = $1 AND coalesce(e.society_id, r.society_id) = $2`,
+    [approvalId, user.society_id],
+  );
   if (!req) throw new Error("Approval request not found");
   if (req.status !== "pending") throw new Error(`Request is already ${req.status}`);
   if (!canDecide(user, req)) throw new Error(`Only a ${req.approver_role}${req.approver_department ? ` (${req.approver_department})` : ""} can decide this`);
@@ -151,7 +156,10 @@ export async function facultyDecision(approvalId: string, decision: "approve" | 
   const req = await one<ApprovalRequest>("SELECT * FROM approval_requests WHERE id = $1", [approvalId]);
   if (!req || req.action_type !== "email.faculty") throw new Error("Not a faculty submission");
   if (req.status !== "awaiting_faculty") throw new Error(`Submission is ${req.status}`);
-  const faculty = await one<User>("SELECT * FROM users WHERE role = 'faculty_advisor' LIMIT 1");
+  const society = req.event_id ? (await one<{ society_id: string }>("SELECT society_id FROM events WHERE id = $1", [req.event_id]))?.society_id ?? null : null;
+  const faculty = society
+    ? await one<User>("SELECT u.* FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.society_id = $1 AND m.role = 'faculty_advisor' LIMIT 1", [society])
+    : null;
   const actor = faculty ?? { id: null, name: "Faculty advisor" };
   const approved = decision === "approve";
   await update("approval_requests", req.id, {
@@ -166,7 +174,7 @@ export async function facultyDecision(approvalId: string, decision: "approve" | 
     }
   }
   await audit(actor as User, approved ? "faculty.approved" : "faculty.rejected", { title: req.title, note }, { eventId: req.event_id, approvedBy: actor.name });
-  await notify({ role: "president" }, `Faculty ${approved ? "approved" : "rejected"} the proposal`, req.title, req.event_id ? `/events/${req.event_id}` : "/approvals");
+  if (society) await notify({ role: "president", societyId: society }, `Faculty ${approved ? "approved" : "rejected"} the proposal`, req.title, req.event_id ? `/events/${req.event_id}` : "/approvals");
   return { status: approved ? "approved" : "rejected" };
 }
 
@@ -225,7 +233,10 @@ async function execute(action: ActionType, p: Payload, actor: User, approver: Us
     case "email.faculty": {
       const ev = await one<EventRow>("SELECT * FROM events WHERE id = $1", [p.event_id]);
       if (!ev) throw new Error("Event not found");
-      const faculty = await one<User>("SELECT * FROM users WHERE role = 'faculty_advisor' LIMIT 1");
+      const faculty = await one<User>(
+        "SELECT u.* FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.society_id = $1 AND m.role = 'faculty_advisor' LIMIT 1",
+        [ev.society_id],
+      );
       const reqId = req?.id ?? "direct";
       const link = `${appUrl()}/faculty/${reqId}?t=${signToken(reqId)}`;
       const html = `${String(p.html)}<p style="margin-top:20px">

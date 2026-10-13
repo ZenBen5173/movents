@@ -1,3 +1,4 @@
+import { pageUser } from "@/lib/guard";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 
 export default async function VenuePage({ params }: { params: Promise<{ id: string; venueId: string }> }) {
   const { id, venueId } = await params;
-  const user = (await currentUser())!;
+  const user = await pageUser();
   const v = await one<Venue>("SELECT * FROM venues WHERE id = $1 AND university_id = $2", [venueId, id]);
   if (!v) notFound();
   const [events, other] = await Promise.all([

@@ -1,5 +1,7 @@
-// Statements are split on ";\n" — keep one statement per block.
-export const SCHEMA_SQL = `
+// Baseline: the schema as it stood before versioned migrations. Every
+// statement is idempotent so databases created by the old runtime bootstrap
+// adopt it without changes.
+export default `
 CREATE TABLE IF NOT EXISTS universities (
   id text PRIMARY KEY,
   name text NOT NULL,
@@ -349,7 +351,6 @@ CREATE TABLE IF NOT EXISTS event_mailboxes (
   label text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-UPDATE venues SET photo_url = '/venues/rooftop-terrace.jpg' WHERE id = 'ven_rooftop';
 CREATE TABLE IF NOT EXISTS sponsors (
   id text PRIMARY KEY,
   event_id text NOT NULL,
@@ -392,5 +393,5 @@ CREATE TABLE IF NOT EXISTS meetings (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_meetings_event ON meetings(event_id);
-ALTER TABLE meetings ADD COLUMN IF NOT EXISTS attended jsonb NOT NULL DEFAULT '[]'::jsonb
+ALTER TABLE meetings ADD COLUMN IF NOT EXISTS attended jsonb NOT NULL DEFAULT '[]'::jsonb;
 `;

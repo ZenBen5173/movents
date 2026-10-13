@@ -1,3 +1,4 @@
+import { pageUser } from "@/lib/guard";
 import Link from "next/link";
 import { currentUser } from "@/lib/session";
 import { query } from "@/lib/db";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 type Row = EventRow & { venue: string | null; going: number; pending: number; tasks: number; done: number; risks: number };
 
 export default async function ProjectsPage() {
-  const user = (await currentUser())!;
+  const user = await pageUser();
   const events = await query<Row>(
     `SELECT e.*, v.name AS venue,
       (SELECT count(*)::int FROM rsvps r WHERE r.event_id = e.id AND r.status = 'going') AS going,

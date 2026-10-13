@@ -1,27 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * No sign-in screen: anyone opening the app lands as the default demo account
- * (the committee member who runs the agent). Switch accounts from the sidebar.
+ * Cheap gate for app pages: no session cookie → sign-in page. The session
+ * itself is validated against the database by currentUser() on the server.
  */
-const DEFAULT_USER = process.env.DEFAULT_USER_ID ?? "usr_committee";
-
 export function middleware(req: NextRequest) {
-  if (req.nextUrl.pathname === "/login") {
-    const res = NextResponse.redirect(new URL("/", req.url));
-    res.cookies.set("ep_uid", DEFAULT_USER, { path: "/", sameSite: "lax", httpOnly: true, maxAge: 60 * 60 * 24 * 14 });
-    return res;
-  }
-  if (req.cookies.get("ep_uid") || req.headers.get("authorization")) return NextResponse.next();
-  // Make the cookie visible to this very request too, then persist it.
-  const headers = new Headers(req.headers);
-  const existing = req.headers.get("cookie");
-  headers.set("cookie", existing ? `${existing}; ep_uid=${DEFAULT_USER}` : `ep_uid=${DEFAULT_USER}`);
-  const res = NextResponse.next({ request: { headers } });
-  res.cookies.set("ep_uid", DEFAULT_USER, { path: "/", sameSite: "lax", httpOnly: true, maxAge: 60 * 60 * 24 * 14 });
-  return res;
+  if (req.cookies.get("mv_session")) return NextResponse.next();
+  const login = new URL("/login", req.url);
+  const next = req.nextUrl.pathname + req.nextUrl.search;
+  if (next !== "/") login.searchParams.set("next", next);
+  return NextResponse.redirect(login);
 }
 
 export const config = {
-  matcher: ["/((?!api/|_next/|icons/|icon|apple-icon|manifest|sw.js|e/|f/|faculty/|pay/|favicon).*)"],
+  // Public: sign-in, API (own auth), OAuth discovery, static assets, and the
+  // guest pages (event registration, feedback, faculty approval, payments, invites).
+  matcher: [
+    "/((?!login|auth/|invite/|oauth/|api/|\\.well-known/|_next/|icons/|venues/|unis/|icon|apple-icon|manifest|sw.js|robots.txt|favicon|e/|f/|faculty/|pay/|.*\\.(?:png|jpg|jpeg|svg|webp|ico|woff2?)$).*)",
+  ],
 };

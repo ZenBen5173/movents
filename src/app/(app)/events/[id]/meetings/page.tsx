@@ -2,12 +2,14 @@ import { one, query } from "@/lib/db";
 import { listMembers } from "@/lib/members";
 import { MEETING_TEMPLATES, demoNow, listMeetings } from "@/lib/meetings";
 import { MeetingsView } from "@/components/app/meetings-view";
+import { canViewEvent } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
 /** Meetings: next one up as a ticket, a month strip, then upcoming and past with minutes. */
 export default async function MeetingsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await canViewEvent(id))) return null;
   const [ev, team, meetings] = await Promise.all([
     one<{ title: string; date: string }>("SELECT title, date FROM events WHERE id = $1", [id]),
     listMembers(id),

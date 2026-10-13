@@ -1,5 +1,6 @@
 import "server-only";
-import { id, insert, one, query, sameEverywhere, stableToken, update } from "../db";
+import crypto from "node:crypto";
+import { id, insert, one, query, update } from "../db";
 import { audit } from "../audit";
 import { gate, speakerEmail, type GateResult } from "../actions";
 import { appUrl, fmtDate, fmtRM, today } from "../appurl";
@@ -103,7 +104,7 @@ export async function readSop(eventId: string) {
 
 /** Who can own work on an event: its team first, execs for sign-offs, round-robin otherwise. */
 async function ownerPicker(eventId: string, societyId: string) {
-  const all = await query<User>("SELECT * FROM users WHERE society_id = $1 ORDER BY name", [societyId]);
+  const all = await query<User>("SELECT * FROM society_members WHERE society_id = $1 ORDER BY name", [societyId]);
   const members = await query<{ user_id: string; role: string }>("SELECT user_id, role FROM event_members WHERE event_id = $1 ORDER BY added_at", [eventId]);
   const team = members.map((m) => all.find((u) => u.id === m.user_id)).filter(Boolean) as User[];
   const lead = all.find((u) => u.id === members.find((m) => m.role === "lead")?.user_id) ?? team[0];
@@ -423,7 +424,7 @@ export async function requestBudgetApproval(user: User, eventId: string, runId: 
 
 export async function submitToFaculty(user: User, eventId: string, runId: string | null) {
   const { ev, uni } = await eventContext(eventId);
-  const faculty = await one<User>("SELECT * FROM users WHERE society_id = $1 AND role = 'faculty_advisor'", [ev.society_id]);
+  const faculty = await one<User>("SELECT * FROM society_members WHERE society_id = $1 AND role = 'faculty_advisor'", [ev.society_id]);
   const venue = ev.venue_id ? await one<Venue>("SELECT * FROM venues WHERE id = $1", [ev.venue_id]) : null;
   const html = `<p>Dear ${faculty?.name ?? "Advisor"},</p><p>The ${uni.society_name} submits the proposal for <b>${ev.title}</b> on <b>${fmtDate(ev.date)}</b> (${ev.start_time} to ${ev.end_time}) at ${venue?.name ?? "TBC"} for ${ev.pax} participants, budget cap ${fmtRM(ev.budget_cap)}.</p><p>The proposal follows the ${uni.short_name} SOP format and includes the budget, risk register and timeline. Please review and approve or reject using the buttons below.</p>`;
   return gate(user, "email.faculty", `Submit "${ev.title}" proposal to faculty advisor`, { event_id: eventId, to: faculty?.email, subject: `[Approval] Event proposal, ${ev.title} (${fmtDate(ev.date)})`, html }, { eventId, runId });
@@ -483,7 +484,7 @@ export async function syncRsvps(eventId: string, source: "luma" | "meetup", simu
 }
 
 export function ticketCode() {
-  return `T-${(sameEverywhere ? stableToken("ticket", 4) : crypto.randomUUID().replace(/-/g, "").slice(0, 8)).toUpperCase()}`;
+  return `T-${crypto.randomBytes(5).toString("hex").toUpperCase()}`;
 }
 
 // ------------------------------------------------------------------ post-event

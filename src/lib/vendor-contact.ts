@@ -10,8 +10,8 @@ import type { User, Vendor } from "./types";
 export async function vendorRecipient(v: Pick<Vendor, "contact_email" | "name">, societyId: string | null) {
   if (v.contact_email) return { to: v.contact_email, forward: false };
   const dir =
-    (await one<User>("SELECT * FROM users WHERE society_id = $1 AND role = 'director' AND department = 'Logistics'", [societyId])) ??
-    (await one<User>("SELECT * FROM users WHERE society_id = $1 AND role = 'president'", [societyId]));
+    (await one<User>("SELECT * FROM society_members WHERE society_id = $1 AND role = 'director' AND department = 'Logistics'", [societyId])) ??
+    (await one<User>("SELECT * FROM society_members WHERE society_id = $1 AND role = 'president'", [societyId]));
   return { to: dir?.email ?? "logistics@movents.test", forward: true };
 }
 

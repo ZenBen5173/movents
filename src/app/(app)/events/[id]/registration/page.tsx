@@ -10,11 +10,13 @@ import { Stat } from "@/components/app/ui";
 import { ActionButton } from "@/components/app/action-button";
 import { RsvpTable } from "@/components/app/rsvp-table";
 import { promoteWaitlist, publish, sync } from "@/app/actions";
+import { canViewEvent } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
 export default async function RegistrationPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await canViewEvent(id))) return null;
   const b = (await loadBundle(id))!;
   const reminders = await query<{ id: string; label: string; scheduled_for: string; status: string }>("SELECT * FROM reminders WHERE event_id = $1 ORDER BY scheduled_for", [id]);
   const lessons = await query<{ content: string }>("SELECT content FROM sop_documents WHERE university_id = $1 AND kind = 'lessons' ORDER BY created_at DESC", [b.university!.id]);

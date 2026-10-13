@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { BlockField } from "@/components/app/runsheet-editor";
 import { CoLeadChip, ContactChip, CrewEditor, type Crew } from "@/components/app/crew-editor";
 import { cn } from "@/lib/utils";
+import { canViewEvent } from "@/lib/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -125,6 +126,7 @@ function Timetable({ blocks }: { blocks: Block[] }) {
 /** Run of show as a timetable, then crew, then who to call. All server rendered; only the edit fields are client. */
 export default async function DayPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await canViewEvent(id))) return null;
   const [items, vols, team] = await Promise.all([
     query<Item>("SELECT id, start_time, end_time, activity, owner, location, notes FROM runsheet_items WHERE event_id = $1 ORDER BY start_time", [id]),
     query<Crew>("SELECT id, name, role, phone, shift, emergency FROM volunteers WHERE event_id = $1 ORDER BY (name LIKE '%(to assign)'), emergency DESC, name", [id]),

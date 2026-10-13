@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { one } from "@/lib/db";
 import { currentUser } from "@/lib/session";
 import { TOOLS, findTool } from "@/lib/agent/registry";
 import { MCP_INSTRUCTIONS } from "@/lib/agent/guide";
@@ -18,11 +17,8 @@ type RpcReq = { jsonrpc: "2.0"; id?: string | number | null; method: string; par
 
 const PROTOCOL = "2025-06-18";
 
-async function authUser(req: Request): Promise<User | null> {
-  const u = await currentUser();
-  if (u) return u;
-  const key = new URL(req.url).searchParams.get("key");
-  return key ? one<User>("SELECT * FROM users WHERE api_key = $1", [key]) : null;
+async function authUser(_req: Request): Promise<User | null> {
+  return currentUser();
 }
 
 async function handleOne(msg: RpcReq, user: User | null) {

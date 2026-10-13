@@ -1,3 +1,4 @@
+import { pageUser } from "@/lib/guard";
 import Link from "next/link";
 import { FileStack } from "lucide-react";
 import { currentUser } from "@/lib/session";
@@ -11,7 +12,7 @@ import { visibleSql } from "@/lib/members";
 export const dynamic = "force-dynamic";
 
 export default async function OutputsPage() {
-  const user = (await currentUser())!;
+  const user = await pageUser();
   const events = await query<{ id: string; title: string; date: string; status: string; has_report: boolean }>(
     `SELECT e.id, e.title, e.date, e.status,
       EXISTS (SELECT 1 FROM feedback f WHERE f.event_id = e.id) AS has_report
