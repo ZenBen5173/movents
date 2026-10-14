@@ -11,7 +11,8 @@
     "test": "tsx --conditions=react-server --test tests/*.test.ts",
     "migrate": "tsx --conditions=react-server scripts/migrate.ts",
     "purge-demo": "tsx --conditions=react-server scripts/purge-demo.ts",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "restore-backup": "tsx --conditions=react-server scripts/restore-backup.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

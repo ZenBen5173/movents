@@ -76,7 +76,12 @@ Sign-in links and invites are sent through the configured provider. With Resend,
 
 - **Rate limits** use the client IP from `x-real-ip` / `x-forwarded-for`. Vercel sets these; behind your own proxy,
   make sure it overwrites them.
-- **Backups:** use your database provider's point-in-time recovery.
+- **Backups:** the daily cron (01:00 UTC) writes a compressed copy of the data to the private Blob store as `backups/YYYY-MM-DD.json.gz` and keeps 14 days. It leaves out sessions, sign-in links, OAuth tokens and rate limits (people sign in again after a restore). Restore into a migrated database (try a Neon branch first):
+  ```bash
+  DATABASE_URL=... BLOB_READ_WRITE_TOKEN=... npm run restore-backup -- backups/2026-10-14.json.gz        # dry run
+  DATABASE_URL=... BLOB_READ_WRITE_TOKEN=... npm run restore-backup -- backups/2026-10-14.json.gz --yes  # replace data
+  ```
+  For anything within the last few hours, your database provider's point-in-time restore is quicker.
 - **Rotating `APP_SECRET`:** invalidates outstanding faculty, upload and document links (they can be re-sent).
   Sessions and API tokens are unaffected.
 - **Revoking access:** remove a member in Settings (their event access ends immediately); users revoke their own
