@@ -6,7 +6,7 @@ const SESSION = "mv_session";
 const TOKEN_ROUTES = ["/api/mcp", "/api/agent/", "/api/runs/", "/api/outputs/"];
 
 /** Pages anyone can open (each checks access itself where needed). */
-const PUBLIC = /^\/(login|auth\/|invite\/|oauth\/|onboarding|\.well-known\/|e\/|f\/|faculty\/|pay\/)/;
+const PUBLIC = /^\/(login|privacy|terms|auth\/|invite\/|oauth\/|onboarding|\.well-known\/|e\/|f\/|faculty\/|pay\/)/;
 
 function sameSite(req: NextRequest) {
   const origin = req.headers.get("origin");

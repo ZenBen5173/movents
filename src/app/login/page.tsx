@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BrandMark } from "@/components/app/brand-mark";
 import { currentUser } from "@/lib/session";
@@ -27,7 +28,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <p role="alert" className="mt-5 rounded-xl border border-[var(--red-6)] bg-[var(--red-2)] p-3 text-sm text-[var(--red-11)]">{ERRORS[error]}</p>
         )}
         <LoginForm next={target} google={googleEnabled()} />
-        <p className="mt-8 text-xs text-muted-foreground">By continuing you agree to use Movents for your society&apos;s events and to keep member data private.</p>
+        <p className="mt-8 text-xs text-muted-foreground">
+          By continuing you agree to the <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">Terms of Use</Link> and{" "}
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">Privacy Policy</Link>.
+        </p>
       </div>
     </main>
   );

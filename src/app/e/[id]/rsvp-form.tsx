@@ -68,6 +68,9 @@ export function RsvpForm({ eventId, full }: { eventId: string; full: boolean }) 
             <motion.button whileTap={{ scale: 0.97 }} disabled={pending} className="h-10 w-full rounded-lg bg-primary text-sm font-medium text-primary-foreground shadow-sm shadow-primary/30">
               {pending ? "Registering…" : full ? "Join waitlist" : "Get my ticket"}
             </motion.button>
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              The organisers see your details to run this event. See the <a href="/privacy" className="underline underline-offset-2">Privacy Policy</a>.
+            </p>
           </motion.form>
         )}
       </AnimatePresence>
