@@ -170,7 +170,20 @@ function Board({ tasks, onOpen }: { tasks: TaskItem[]; onOpen: (t: TaskItem) => 
               const blocked = blockersOf(t, tasks);
               return (
                 <KanbanCard key={item.id} {...item} className={cn("gap-1.5 rounded-xl border-[1.5px] border-ink bg-card p-3 shadow-[2px_2px_0_0_#161514]", blocked.length && item.column !== "done" && "bg-sun-soft")}>
-                  <div onClick={() => onOpen(t)} className="cursor-pointer">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onOpen(t)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        // Open the task; don't let the card's keyboard-drag handler pick it up too.
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onOpen(t);
+                      }
+                    }}
+                    className="cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
                     <p className="text-[13.5px] font-medium leading-snug">{clean(t.title)}</p>
                     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                       <span className="font-mono">{short(t.due_date)}</span>

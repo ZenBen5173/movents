@@ -37,7 +37,7 @@ export default async function SuppliersPage({ params }: { params: Promise<{ id: 
               <th className="py-2.5 font-normal">Supplier</th>
               <th className="py-2.5 pr-4 text-right font-normal">Quote</th>
               <th className="py-2.5 font-normal">Progress</th>
-              <th className="py-2.5 pr-4 text-right font-normal" />
+              <th className="py-2.5 pr-4 text-right font-normal"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
