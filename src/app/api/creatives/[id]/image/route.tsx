@@ -64,14 +64,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       },
     });
   };
+  // ?preview: a ~1200px JPEG for link previews; WhatsApp and others skip multi-MB images.
+  const preview = url.searchParams.has("preview") && !download;
+  const small = async (bytes: Uint8Array) => {
+    const { default: sharp } = await import("sharp");
+    return new Uint8Array(await sharp(bytes).resize({ width: 1200, withoutEnlargement: true }).jpeg({ quality: 80, mozjpeg: true }).toBuffer());
+  };
   if (c.media_key) {
     const blob = await getMedia(c.media_key);
     if (!blob) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return media(blob.stream, c.media_type ?? blob.blob.contentType);
+    const mime = c.media_type ?? blob.blob.contentType;
+    if (preview && mime.startsWith("image/")) return media(await small(new Uint8Array(await new Response(blob.stream).arrayBuffer())), "image/jpeg");
+    return media(blob.stream, mime);
   }
   if (c.image_data) {
     const [meta, b64] = c.image_data.split(",");
-    return media(new Uint8Array(Buffer.from(b64, "base64")), meta.slice(5, meta.indexOf(";")));
+    const mime = meta.slice(5, meta.indexOf(";"));
+    const bytes = new Uint8Array(Buffer.from(b64, "base64"));
+    return media(preview && mime.startsWith("image/") ? await small(bytes) : bytes, preview && mime.startsWith("image/") ? "image/jpeg" : mime);
   }
 
   const ev = await one<EventRow & { society: string; uni: string }>("SELECT e.*, s.name AS society, u.short_name AS uni FROM events e JOIN societies s ON s.id = e.society_id JOIN universities u ON u.id = s.university_id WHERE e.id = $1", [c.event_id]);

@@ -1,20 +1,39 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CalendarDays, Clock, MapPin, Users } from "lucide-react";
 import { one, query } from "@/lib/db";
 import { currentUser } from "@/lib/session";
 import { isMember } from "@/lib/members";
 import { isPublished } from "@/lib/public-events";
-import { fmtDate } from "@/lib/appurl";
-import type { EventRow, Venue } from "@/lib/types";
+import { appUrl, fmtDate } from "@/lib/appurl";
+import { imageHref } from "@/lib/marketing";
+import type { Creative, EventRow, Venue } from "@/lib/types";
 import { RsvpForm } from "./rsvp-form";
 import { BrandMark } from "@/components/app/brand-mark";
 
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+/** Link previews (WhatsApp, Instagram, LinkedIn…) for published events only; drafts reveal nothing. */
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const ev = await one<EventRow>("SELECT title FROM events WHERE id = $1", [id]);
-  return { title: ev ? `Register, ${ev.title}` : "Event" };
+  const ev = await one<EventRow & { society: string; venue: string | null }>(
+    "SELECT e.*, s.name AS society, v.name AS venue FROM events e JOIN societies s ON s.id = e.society_id LEFT JOIN venues v ON v.id = e.venue_id WHERE e.id = $1",
+    [id],
+  );
+  if (!ev) return { title: "Event" };
+  if (!isPublished(ev)) {
+    const user = await currentUser();
+    if (!user || !(await isMember(user, id))) return { title: "Event" };
+  }
+  const poster = await one<Pick<Creative, "id" | "updated_at">>("SELECT id, updated_at FROM creatives WHERE event_id = $1 AND kind = 'poster' AND status IN ('approved','posted')", [id]);
+  const description = `${fmtDate(ev.date)}, ${ev.start_time} to ${ev.end_time}${ev.venue ? ` at ${ev.venue}` : ""}. Hosted by ${ev.society}. Register on Movents.`;
+  const images = poster ? [{ url: `${appUrl()}${imageHref(poster)}&preview` }] : undefined;
+  return {
+    title: `Register, ${ev.title}`,
+    description,
+    openGraph: { type: "website", title: ev.title, description, url: `${appUrl()}/e/${id}`, siteName: "Movents", images },
+    twitter: { card: poster ? "summary_large_image" : "summary", title: ev.title, description, images: images?.map((i) => i.url) },
+  };
 }
 
 export default async function PublicEvent({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ via?: string }> }) {
