@@ -16,6 +16,7 @@ export function AccountPanel({ email }: { email: string }) {
         <form action={signOutEverywhere}>
           <button className="h-8 rounded-lg border-[1.5px] border-ink px-3 text-xs font-medium hover:bg-sand/60">Sign out on all devices</button>
         </form>
+        <a href="/api/account/export" download className="inline-flex h-8 items-center rounded-lg border-[1.5px] border-ink px-3 text-xs font-medium hover:bg-sand/60">Download my data</a>
         <button onClick={() => setOpen((o) => !o)} className="h-8 rounded-lg px-3 text-xs font-medium text-tomato-ink hover:bg-peach">Delete account…</button>
       </div>
       {open && (

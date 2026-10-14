@@ -60,6 +60,19 @@ test("sign-in redirects stay on this site", () => {
   assert.equal(safeNext("/\\evil.com"), "/");
 });
 
+test("data export has the person's own records and no token secrets", async () => {
+  const { exportAccount } = await import("../src/lib/auth/accounts");
+  const { createApiToken } = await import("../src/lib/auth/api-tokens");
+  const user = await findOrCreateUser({ email: `export-${crypto.randomUUID()}@uni.test`, verified: true });
+  const token = await createApiToken(user.id, "Laptop");
+  const data = await exportAccount(user.id);
+  const json = JSON.stringify(data);
+  assert.equal((data.account as { email: string }).email, user.email);
+  assert.equal(data.api_tokens.length, 1);
+  assert.ok(!json.includes(token), "full token must not appear");
+  assert.ok(!/token_hash|access_hash|refresh_hash|api_key/.test(json), "no hashes or legacy keys");
+});
+
 test("OAuth: redirect URIs are restricted", () => {
   assert.equal(O.validRedirect("https://claude.ai/api/mcp/auth_callback"), true);
   assert.equal(O.validRedirect("http://localhost:6274/cb"), true);

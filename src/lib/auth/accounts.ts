@@ -113,6 +113,36 @@ export async function deleteAccount(userId: string) {
   });
 }
 
+/**
+ * Everything Movents holds about one person (PDPA access request), for the
+ * "Download my data" button. Their own records only: no token hashes, and no
+ * other members' or guests' details.
+ */
+export async function exportAccount(userId: string) {
+  const [account, memberships, eventTeams, tasks, actions, sessions, apiTokens, connectedApps] = await Promise.all([
+    one("SELECT id, name, email, phone, department, avatar_url, email_verified_at, created_at, (google_sub IS NOT NULL) AS google_linked FROM users WHERE id = $1", [userId]),
+    query("SELECT s.name AS society, u.name AS university, m.role, m.department, m.created_at AS joined_at FROM memberships m JOIN societies s ON s.id = m.society_id LEFT JOIN universities u ON u.id = s.university_id WHERE m.user_id = $1 ORDER BY m.created_at", [userId]),
+    query("SELECT e.title AS event, e.date, em.role, em.added_at FROM event_members em JOIN events e ON e.id = em.event_id WHERE em.user_id = $1 ORDER BY e.date", [userId]),
+    query("SELECT e.title AS event, t.title, t.status, t.due_date FROM tasks t JOIN events e ON e.id = t.event_id WHERE t.owner_id = $1 ORDER BY t.due_date", [userId]),
+    query("SELECT action, event_id, created_at FROM audit_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT 5000", [userId]),
+    query("SELECT created_at, last_seen_at, expires_at, user_agent, ip FROM sessions WHERE user_id = $1 ORDER BY created_at DESC", [userId]),
+    query("SELECT name, prefix, created_at, last_used_at, expires_at, revoked_at FROM api_tokens WHERE user_id = $1 ORDER BY created_at DESC", [userId]),
+    query("SELECT c.name AS app, t.scope, t.created_at, t.revoked_at FROM oauth_tokens t LEFT JOIN oauth_clients c ON c.id = t.client_id WHERE t.user_id = $1 ORDER BY t.created_at DESC", [userId]),
+  ]);
+  return {
+    exported_at: new Date().toISOString(),
+    note: "Your personal data held by Movents. Society records you helped create (events, budgets, files) belong to your society; ask a President for a copy.",
+    account,
+    memberships,
+    event_teams: eventTeams,
+    tasks_assigned_to_you: tasks,
+    your_actions: actions,
+    sign_in_sessions: sessions,
+    api_tokens: apiTokens,
+    connected_apps: connectedApps,
+  };
+}
+
 export async function endAllSessions(userId: string) {
   await query("DELETE FROM sessions WHERE user_id = $1", [userId]);
 }

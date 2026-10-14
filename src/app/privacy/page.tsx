@@ -65,8 +65,8 @@ export default function PrivacyPage() {
 
       <Section n={6} title="Your rights">
         <p>
-          You can view and correct your details in Settings, delete your account in Settings, and revoke connected AI assistants and tokens at any time. To
-          request a copy of your data or make any other request, email <a className="underline underline-offset-2" href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a>.
+          In Settings you can view and correct your details, download a copy of your data (&ldquo;Download my data&rdquo;), delete your account, and revoke
+          connected AI assistants and tokens at any time. For anything else, email <a className="underline underline-offset-2" href={`mailto:${LEGAL.email}`}>{LEGAL.email}</a>.
           We reply within 21 days.
         </p>
       </Section>
