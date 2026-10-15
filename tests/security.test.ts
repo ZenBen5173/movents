@@ -35,6 +35,18 @@ test("media: real image types pass, SVG and HTML are refused", () => {
   assert.throws(() => toMedia(Buffer.from("<html><script>alert(1)</script></html>")), /Unsupported/);
 });
 
+test("middleware keeps the Authorization header only where routes check it themselves", async () => {
+  const { NextRequest } = await import("next/server");
+  const { middleware } = await import("../src/middleware");
+  const run = (path: string) => middleware(new NextRequest(`https://movents.test${path}`, { headers: { authorization: "Bearer x", accept: "text/plain" } }));
+  // Header untouched: no request-header override from middleware.
+  assert.equal(run("/api/cron/daily").headers.get("x-middleware-override-headers"), null, "cron must receive CRON_SECRET");
+  assert.equal(run("/api/mcp").headers.get("x-middleware-override-headers"), null);
+  // Elsewhere the header is stripped, so tokens can't drive pages or other APIs.
+  const stripped = run("/api/health").headers.get("x-middleware-override-headers") ?? "";
+  assert.ok(stripped.split(",").includes("accept") && !stripped.split(",").includes("authorization"), "authorization removed on other routes");
+});
+
 test("browser uploads may only write to their own creative's folder", async () => {
   const { uploadKeyOk } = await import("../src/lib/marketing");
   assert.equal(uploadKeyOk("crv_a1", "creatives/crv_a1/1791899337018.png"), true);

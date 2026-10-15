@@ -2,8 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const SESSION = "mv_session";
 
-/** API routes that accept `Authorization: Bearer` tokens (MCP and agent clients). */
-const TOKEN_ROUTES = ["/api/mcp", "/api/agent/", "/api/runs/", "/api/outputs/"];
+/**
+ * API routes that read `Authorization: Bearer` themselves: MCP and agent
+ * clients, and the daily cron (Vercel sends CRON_SECRET, checked by the route).
+ */
+const TOKEN_ROUTES = ["/api/mcp", "/api/agent/", "/api/runs/", "/api/outputs/", "/api/cron/"];
 
 /** Pages anyone can open (each checks access itself where needed). */
 const PUBLIC = /^\/(login|privacy|terms|auth\/|invite\/|oauth\/|onboarding|\.well-known\/|e\/|f\/|faculty\/|pay\/)/;
